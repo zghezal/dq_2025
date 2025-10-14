@@ -25,11 +25,13 @@ The DQ Builder app helps users:
 │   │   ├── navbar.py      # Navigation bar and stepper
 │   │   ├── home.py        # Home page layout
 │   │   ├── dq.py          # DQ Management page layout
-│   │   └── build.py       # Build page layout (wizard)
+│   │   ├── build.py       # Build page layout (wizard)
+│   │   └── configs.py     # Configurations page layout (visualization)
 │   └── callbacks/         # Business logic
 │       ├── navigation.py  # Navigation and routing callbacks
 │       ├── dq.py          # DQ Management page callbacks
-│       └── build.py       # Build page callbacks (datasets, metrics, tests, publication)
+│       ├── build.py       # Build page callbacks (datasets, metrics, tests, publication)
+│       └── configs.py     # Configurations page callbacks (table display, modal)
 ├── datasets/              # Directory for CSV datasets
 └── managed_folders/       # Directory for published configurations
 ```
@@ -41,6 +43,21 @@ The DQ Builder app helps users:
 - **Config Format**: JSON/YAML via PyYAML
 
 ## Recent Changes
+
+### Configuration Visualization Feature (Oct 14, 2025)
+**New Configurations Page**: Added tabular visualization for stored YAML/JSON configurations
+- **Purpose**: Provide synthetic view of configurations (YAML alone is not user-friendly for quick overview)
+- **Features**:
+  - Browse all saved configurations from managed_folders/dq_params/
+  - Tabular display with common parameters: ID, Type, Table/Metric, Column, Description
+  - Interactive modal to view complete configuration details by clicking on table rows
+  - Separate tabs for Metrics and Tests
+  - Context banner showing Stream and Project information
+- **Implementation**:
+  - New layout: `src/layouts/configs.py`
+  - New callbacks: `src/callbacks/configs.py`
+  - Added navigation link in navbar
+  - Uses dash_table.DataTable for interactive table display
 
 ### Code Refactoring (Oct 14, 2025)
 **Modular Architecture**: Split monolithic `app.py` (925 lines) into organized modules
@@ -143,12 +160,17 @@ Deployment is configured for autoscale mode, suitable for this stateless web app
   2. Define metrics (tabbed interface)
   3. Create tests (tabbed interface)
   4. Preview and publish
+- **Configurations Page** (`/configs`): Visualize stored configurations in table format
+  - Browse YAML/JSON configuration files
+  - View metrics and tests in tabular format with key parameters
+  - Click on rows to see complete configuration details in modal
 
 ### Key Features
 - **Dataset Management**: Uses local CSV files from `./datasets/` directory
 - **Metric Types**: row_count, sum, mean, distinct_count, ratio
 - **Test Types**: null_rate, uniqueness, range, regex, foreign_key
 - **Publication**: Saves configurations to managed folders in JSON or YAML format
+- **Configuration Visualization**: Tabular view of stored YAML/JSON configs with interactive details modal
 - **Local Mode**: Uses `dataiku_stub.py` to simulate Dataiku API for standalone development
 - **Pattern Matching Helper**: `first()` function safely handles Dash ALL pattern matching
 
