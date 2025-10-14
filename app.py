@@ -125,7 +125,6 @@ DQ_POINTS = [
 
 def dq_page():
     return dbc.Container([
-        dcc.Location(id="dq-url", refresh=False),
         dbc.Card([dbc.CardHeader("DQ Management"), dbc.CardBody([
             dbc.Row([
                 dbc.Col([html.Label("Stream"), dcc.Dropdown(id="dq-stream", options=[{"label": s, "value": s} for s in STREAMS.keys()], placeholder="Select stream", clearable=False)], md=4),
@@ -140,7 +139,6 @@ def dq_page():
 
 def build_page():
     return dbc.Container([
-        dcc.Location(id="build-url", refresh=False),
         html.Div(id="ctx-banner"),
         stepper(0),
         dcc.Store(id="store_datasets", storage_type="memory"),
@@ -302,17 +300,34 @@ def display_page(pathname):
         return dq_page()
     return dbc.Container([dbc.Alert("🛠️ Bientôt disponible. Revenez à la Construction pour l’instant.", color="info")], fluid=True)
 
-@app.callback(Output("ctx-banner","children"), Input("build-url","search"))
-def update_ctx_banner(search):
-    q = parse_query(search or "")
+@app.callback(Output("ctx-banner","children"), Input("url","href"))
+def update_ctx_banner(href):
+    # Extract query params from full URL (URL-decode first!)
+    decoded_href = urlparse.unquote(href) if href else ""
+    q = {}
+    if decoded_href and '?' in decoded_href:
+        query_string = '?' + decoded_href.split('?', 1)[1]
+        q = parse_query(query_string)
+    else:
+        q = {}
     if not q.get("stream") or not q.get("project"):
         return dbc.Alert("Contexte non défini (utilise l’accueil pour choisir un Stream et un Projet).", color="warning", className="mb-3")
     return dbc.Alert(f"Contexte: Stream = {q['stream']} • Projet = {q['project']}", color="info", className="mb-3")
 
-@app.callback(Output("ds-picker","options"), Input("build-url","search"))
-def update_dataset_options(search):
+@app.callback(
+    Output("ds-picker","options"), 
+    Input("url","href")
+)
+def update_dataset_options(href):
     """Met à jour les datasets disponibles selon le contexte"""
-    q = parse_query(search or "")
+    # Extract query params from full URL (URL-decode first!)
+    decoded_href = urlparse.unquote(href) if href else ""
+    q = {}
+    if decoded_href and '?' in decoded_href:
+        query_string = '?' + decoded_href.split('?', 1)[1]
+        q = parse_query(query_string)
+    else:
+        q = {}
     stream = q.get("stream")
     projet = q.get("project") 
     dq_point = q.get("dq_point")
@@ -753,7 +768,7 @@ def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_lis
               Input("store_metrics","data"),
               Input("store_tests","data"),
               Input("fmt","value"),
-              State("build-url","search"))
+              State("url","search"))
 def render_cfg_preview(datasets, metrics, tests, fmt, search):
     q = parse_query(search or "")
     cfg = cfg_template()

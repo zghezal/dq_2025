@@ -44,6 +44,14 @@ The DQ Builder app helps users:
    - Added dynamic href callback that updates based on stream/project/dq_point dropdown selections
    - URL-decode pathname in display_page callback to handle encoded query parameters
 
+4. **Nested Location components issue** (Oct 14, 2025): Fixed URL query parameters not being passed to Build page
+   - **Root cause**: Nested `dcc.Location` components (build-url, dq-url) were resetting browser URL and clearing query params
+   - **Solution**: Removed all nested Location components, now only using main `dcc.Location(id="url")`
+   - **URL encoding fix**: Added `urlparse.unquote()` to decode href before extracting query params (href contains %3F instead of ?)
+   - **Callbacks updated**: Changed `update_ctx_banner` and `update_dataset_options` to use `Input("url","href")` with URL decoding
+   - Context banner now correctly displays Stream/Project from URL parameters
+   - Dataset dropdown now correctly filters datasets based on URL context
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project
