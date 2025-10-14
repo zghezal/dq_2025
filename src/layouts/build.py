@@ -1,6 +1,6 @@
 # Page Build (wizard de création DQ avec onglets)
 
-from dash import html, dcc, dash_table
+from dash import html, dcc
 import dash_bootstrap_components as dbc
 
 

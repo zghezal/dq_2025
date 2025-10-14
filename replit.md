@@ -44,6 +44,17 @@ The DQ Builder app helps users:
 
 ## Recent Changes
 
+### Build Page UI Redesign (Oct 14, 2025)
+**Tabbed Interface**: Transformed vertical step-by-step wizard into modern tabbed interface
+- **Purpose**: Improved UX with better organization and visibility of all configuration options
+- **Changes**:
+  - Replaced vertical stepper with 4 main tabs (Datasets, Métriques, Tests, Publication)
+  - Added interactive tables for visualizing metrics and tests
+  - Metrics tab: Sub-tabs for Créer, Visualiser (table), Liste (JSON)
+  - Tests tab: Sub-tabs for Créer, Visualiser (table), Liste (JSON)
+  - Auto-switch to Visualiser tab after adding metrics/tests
+- **Benefits**: Cleaner interface, easier navigation, better overview of configured items
+
 ### Configuration Visualization Feature (Oct 14, 2025)
 **New Configurations Page**: Added tabular visualization for stored YAML/JSON configurations
 - **Purpose**: Provide synthetic view of configurations (YAML alone is not user-friendly for quick overview)
@@ -155,11 +166,11 @@ Deployment is configured for autoscale mode, suitable for this stateless web app
 ### Multi-Page Structure
 - **Home Page** (`/`): Welcome page with navigation
 - **DQ Management** (`/dq`): Select stream, project, and DQ point; create or manage configurations
-- **Build Page** (`/build`): Four-step wizard for creating DQ configurations
-  1. Select datasets and assign aliases
-  2. Define metrics (tabbed interface)
-  3. Create tests (tabbed interface)
-  4. Preview and publish
+- **Build Page** (`/build`): Tabbed interface for creating DQ configurations
+  - **Onglet Datasets**: Select datasets and assign aliases
+  - **Onglet Métriques**: Define metrics with sub-tabs (Créer, Visualiser, Liste)
+  - **Onglet Tests**: Create tests with sub-tabs (Créer, Visualiser, Liste)
+  - **Onglet Publication**: Preview and publish configurations
 - **Configurations Page** (`/configs`): Visualize stored configurations in table format
   - Browse YAML/JSON configuration files
   - View metrics and tests in tabular format with key parameters
