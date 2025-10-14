@@ -830,61 +830,79 @@ def register_build_callbacks(app):
         Input("store_metrics", "data")
     )
     def display_metrics_table(metrics):
-        """Affiche le tableau de visualisation des métriques"""
-        from dash import dash_table
-        
+        """Affiche le tableau de visualisation des métriques avec actions"""
         if not metrics:
             return dbc.Alert("Aucune métrique définie. Utilisez l'onglet 'Créer' pour en ajouter.", color="info")
         
-        # Préparer les données pour le tableau
-        table_data = []
-        for m in metrics:
-            row = {
-                "id": m.get("id", "N/A"),
-                "type": m.get("type", "N/A"),
-                "database": m.get("database", "-"),
-                "column": m.get("column", "-"),
-                "where": m.get("where", "-"),
-                "expr": m.get("expr", "-")
-            }
-            table_data.append(row)
+        # Créer les lignes du tableau avec boutons d'action
+        table_rows = []
         
-        columns = [
-            {"name": "ID", "id": "id"},
-            {"name": "Type", "id": "type"},
-            {"name": "Base", "id": "database"},
-            {"name": "Colonne", "id": "column"},
-            {"name": "Where", "id": "where"},
-            {"name": "Expression", "id": "expr"}
-        ]
+        # En-tête
+        header = html.Tr([
+            html.Th("ID"),
+            html.Th("Type"),
+            html.Th("Base"),
+            html.Th("Colonne"),
+            html.Th("Where"),
+            html.Th("Expression"),
+            html.Th("Actions", style={"width": "200px"})
+        ])
         
-        table = dash_table.DataTable(
-            data=table_data,
-            columns=columns,
-            style_table={'overflowX': 'auto'},
-            style_cell={
-                'textAlign': 'left',
-                'padding': '10px',
-                'fontSize': '14px',
-                'whiteSpace': 'normal',
-                'height': 'auto'
-            },
-            style_header={
-                'backgroundColor': 'rgb(230, 230, 230)',
-                'fontWeight': 'bold'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': 'rgb(248, 248, 248)'
-                }
-            ],
-            page_size=10
+        # Lignes de données
+        for idx, m in enumerate(metrics):
+            metric_id = m.get("id", "N/A")
+            has_print = m.get("type") in ("row_count", "sum", "mean", "distinct_count")
+            
+            actions = html.Div([
+                dbc.Button(
+                    "✏️", 
+                    id={"type": "edit-metric", "index": idx},
+                    color="warning",
+                    size="sm",
+                    className="me-1",
+                    title="Modifier"
+                ),
+                dbc.Button(
+                    "🗑️", 
+                    id={"type": "delete-metric", "index": idx},
+                    color="danger",
+                    size="sm",
+                    className="me-1",
+                    title="Supprimer"
+                ),
+                dbc.Button(
+                    "🖨️", 
+                    id={"type": "print-metric", "index": idx},
+                    color="info",
+                    size="sm",
+                    title="Print",
+                    style={"display": "inline-block" if has_print else "none"}
+                ) if has_print else None
+            ])
+            
+            row = html.Tr([
+                html.Td(metric_id),
+                html.Td(m.get("type", "N/A")),
+                html.Td(m.get("database", "-")),
+                html.Td(m.get("column", "-")),
+                html.Td(m.get("where", "-")),
+                html.Td(m.get("expr", "-")),
+                html.Td(actions)
+            ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
+            table_rows.append(row)
+        
+        table = dbc.Table(
+            [html.Thead(header), html.Tbody(table_rows)],
+            bordered=True,
+            hover=True,
+            responsive=True,
+            striped=False
         )
         
         return html.Div([
             html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
-            table
+            table,
+            html.Div(id="metric-action-status", className="mt-2")
         ])
     
     @app.callback(
@@ -954,3 +972,130 @@ def register_build_callbacks(app):
             html.H6(f"✅ {len(tests)} test(s) configuré(s)", className="mb-3"),
             table
         ])
+    
+    # ===== Actions sur les métriques =====
+    
+    @app.callback(
+        [Output("store_metrics", "data", allow_duplicate=True),
+         Output("store_tests", "data", allow_duplicate=True),
+         Output("metric-action-status", "children", allow_duplicate=True)],
+        Input({"type": "delete-metric", "index": ALL}, "n_clicks"),
+        [State("store_metrics", "data"),
+         State("store_tests", "data")],
+        prevent_initial_call=True
+    )
+    def delete_metric(n_clicks_list, metrics, tests):
+        """Supprime une métrique et les tests associés"""
+        if not any(n_clicks_list):
+            return no_update, no_update, no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not metrics:
+            return no_update, no_update, no_update
+        
+        # Récupérer la métrique à supprimer
+        metric_to_delete = metrics[clicked_idx]
+        metric_id = metric_to_delete.get("id")
+        
+        # Supprimer la métrique
+        new_metrics = [m for i, m in enumerate(metrics) if i != clicked_idx]
+        
+        # Supprimer les tests qui référencent cette métrique
+        new_tests = tests or []
+        deleted_tests = []
+        if metric_id and tests:
+            filtered_tests = []
+            for t in tests:
+                # Vérifier si le test référence cette métrique
+                if t.get("type") == "foreign_key":
+                    ref = t.get("ref", {})
+                    if ref.get("metric") == metric_id:
+                        deleted_tests.append(t.get("id"))
+                        continue
+                filtered_tests.append(t)
+            new_tests = filtered_tests
+        
+        # Message de statut
+        status_msg = f"✅ Métrique '{metric_id}' supprimée."
+        if deleted_tests:
+            status_msg += f" {len(deleted_tests)} test(s) associé(s) supprimé(s): {', '.join(deleted_tests)}"
+        
+        return new_metrics, new_tests, dbc.Alert(status_msg, color="success", dismissable=True, duration=4000)
+    
+    @app.callback(
+        [Output("metric-type", "value", allow_duplicate=True),
+         Output({"role": "metric-id"}, "value", allow_duplicate=True),
+         Output({"role": "metric-db"}, "value", allow_duplicate=True),
+         Output({"role": "metric-column"}, "value", allow_duplicate=True),
+         Output({"role": "metric-where"}, "value", allow_duplicate=True),
+         Output({"role": "metric-expr"}, "value", allow_duplicate=True),
+         Output("metric-tabs", "active_tab", allow_duplicate=True),
+         Output("metric-action-status", "children", allow_duplicate=True)],
+        Input({"type": "edit-metric", "index": ALL}, "n_clicks"),
+        State("store_metrics", "data"),
+        prevent_initial_call=True
+    )
+    def edit_metric(n_clicks_list, metrics):
+        """Charge une métrique dans le formulaire pour modification"""
+        if not any(n_clicks_list):
+            return [no_update] * 8
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not metrics or clicked_idx >= len(metrics):
+            return [no_update] * 8
+        
+        # Récupérer la métrique à modifier
+        metric = metrics[clicked_idx]
+        
+        return (
+            metric.get("type", ""),
+            metric.get("id", ""),
+            metric.get("database", ""),
+            metric.get("column", ""),
+            metric.get("where", ""),
+            metric.get("expr", ""),
+            "tab-metric-create",  # Basculer vers l'onglet de création
+            dbc.Alert(f"✏️ Métrique '{metric.get('id')}' chargée pour modification. Modifiez les champs puis cliquez sur 'Ajouter' pour mettre à jour.", 
+                     color="info", dismissable=True)
+        )
+    
+    @app.callback(
+        Output("metric-action-status", "children", allow_duplicate=True),
+        Input({"type": "print-metric", "index": ALL}, "n_clicks"),
+        State("store_metrics", "data"),
+        prevent_initial_call=True
+    )
+    def print_metric(n_clicks_list, metrics):
+        """Active le flag print pour une métrique"""
+        if not any(n_clicks_list):
+            return no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not metrics or clicked_idx >= len(metrics):
+            return no_update
+        
+        metric = metrics[clicked_idx]
+        metric_id = metric.get("id")
+        
+        # Note: Le flag print devrait être ajouté à la structure de la métrique
+        # Pour l'instant, on affiche juste un message
+        return dbc.Alert(f"🖨️ Print activé pour la métrique '{metric_id}'. Cette fonctionnalité sera implémentée dans la publication.", 
+                        color="info", dismissable=True, duration=4000)
