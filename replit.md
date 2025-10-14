@@ -44,6 +44,23 @@ The DQ Builder app helps users:
 
 ## Recent Changes
 
+### Inline Documentation (Oct 14, 2025)
+**Help Modals**: Added accessible documentation for metrics and tests
+- **Metric Documentation Modal**:
+  - ❓ Help button next to "Type de métrique" label
+  - Comprehensive docs for all metric types: row_count, sum, mean, distinct_count, ratio
+  - Usage examples and parameter explanations
+- **Test Documentation Modal**:
+  - ❓ Help button next to "Type de test" label
+  - Comprehensive docs for all test types: null_rate, uniqueness, range, regex, foreign_key
+  - Clear explanation that foreign_key tests can reference metrics (not just datasets)
+  - Metric reference format: `metric:M-001` (uses metric ID)
+- **Benefits**:
+  - Accessible help directly from the creation forms
+  - No need to search external documentation
+  - Clear understanding of metric/test capabilities
+  - Highlights that tests can be based on metrics for foreign_key type
+
 ### Enhanced Metric/Test Management (Oct 14, 2025)
 **CRUD Operations & Visual Improvements**: Added full management capabilities for metrics and tests
 - **Auto-generated IDs**:
