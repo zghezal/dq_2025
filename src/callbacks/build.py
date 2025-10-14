@@ -1045,67 +1045,83 @@ def register_build_callbacks(app):
         Input("store_tests", "data")
     )
     def display_tests_table(tests):
-        """Affiche le tableau de visualisation des tests"""
-        from dash import dash_table
-        
+        """Affiche le tableau de visualisation des tests avec actions"""
         if not tests:
             return dbc.Alert("Aucun test défini. Utilisez l'onglet 'Créer' pour en ajouter.", color="info")
         
-        # Préparer les données pour le tableau
-        table_data = []
-        for t in tests:
+        # Créer les lignes du tableau avec boutons d'action
+        table_rows = []
+        
+        # En-tête
+        header = html.Tr([
+            html.Th("ID"),
+            html.Th("Type"),
+            html.Th("Base"),
+            html.Th("Colonne"),
+            html.Th("Sévérité"),
+            html.Th("Seuil"),
+            html.Th("Échantillon"),
+            html.Th("Actions", style={"width": "200px"})
+        ])
+        
+        # Lignes de données
+        for idx, t in enumerate(tests):
+            test_id = t.get("id", "N/A")
+            
             # Extraire le seuil si présent
             threshold = t.get("threshold", {})
             threshold_str = f"{threshold.get('op', '')} {threshold.get('value', '')}" if threshold else "-"
             
-            row = {
-                "id": t.get("id", "N/A"),
-                "type": t.get("type", "N/A"),
-                "database": t.get("database", "-"),
-                "column": t.get("column", "-"),
-                "severity": t.get("severity", "-"),
-                "threshold": threshold_str,
-                "sample_on_fail": "Oui" if t.get("sample_on_fail") else "Non"
-            }
-            table_data.append(row)
+            actions = html.Div([
+                dbc.Button(
+                    "✏️", 
+                    id={"type": "edit-test", "index": idx},
+                    color="warning",
+                    size="sm",
+                    className="me-1",
+                    title="Modifier"
+                ),
+                dbc.Button(
+                    "🗑️", 
+                    id={"type": "delete-test", "index": idx},
+                    color="danger",
+                    size="sm",
+                    className="me-1",
+                    title="Supprimer"
+                ),
+                dbc.Button(
+                    "📥", 
+                    id={"type": "export-test", "index": idx},
+                    color="info",
+                    size="sm",
+                    title="Exporter JSON"
+                )
+            ])
+            
+            row = html.Tr([
+                html.Td(test_id),
+                html.Td(t.get("type", "N/A")),
+                html.Td(t.get("database", "-")),
+                html.Td(t.get("column", "-")),
+                html.Td(t.get("severity", "-")),
+                html.Td(threshold_str),
+                html.Td("Oui" if t.get("sample_on_fail") else "Non"),
+                html.Td(actions)
+            ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
+            table_rows.append(row)
         
-        columns = [
-            {"name": "ID", "id": "id"},
-            {"name": "Type", "id": "type"},
-            {"name": "Base", "id": "database"},
-            {"name": "Colonne", "id": "column"},
-            {"name": "Sévérité", "id": "severity"},
-            {"name": "Seuil", "id": "threshold"},
-            {"name": "Échantillon", "id": "sample_on_fail"}
-        ]
-        
-        table = dash_table.DataTable(
-            data=table_data,
-            columns=columns,
-            style_table={'overflowX': 'auto'},
-            style_cell={
-                'textAlign': 'left',
-                'padding': '10px',
-                'fontSize': '14px',
-                'whiteSpace': 'normal',
-                'height': 'auto'
-            },
-            style_header={
-                'backgroundColor': 'rgb(230, 230, 230)',
-                'fontWeight': 'bold'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': 'rgb(248, 248, 248)'
-                }
-            ],
-            page_size=10
+        table = dbc.Table(
+            [html.Thead(header), html.Tbody(table_rows)],
+            bordered=True,
+            hover=True,
+            responsive=True,
+            striped=False
         )
         
         return html.Div([
             html.H6(f"✅ {len(tests)} test(s) configuré(s)", className="mb-3"),
-            table
+            table,
+            html.Div(id="test-action-status", className="mt-2")
         ])
     
     # ===== Actions sur les métriques =====
@@ -1237,3 +1253,144 @@ def register_build_callbacks(app):
         # Pour l'instant, on affiche juste un message
         return dbc.Alert(f"🖨️ Print activé pour la métrique '{metric_id}'. Cette fonctionnalité sera implémentée dans la publication.", 
                         color="info", dismissable=True, duration=4000)
+    
+    # ===== Actions sur les tests =====
+    
+    @app.callback(
+        [Output("store_tests", "data", allow_duplicate=True),
+         Output("test-action-status", "children", allow_duplicate=True)],
+        Input({"type": "delete-test", "index": ALL}, "n_clicks"),
+        State("store_tests", "data"),
+        prevent_initial_call=True
+    )
+    def delete_test(n_clicks_list, tests):
+        """Supprime un test"""
+        if not any(n_clicks_list):
+            return no_update, no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not tests:
+            return no_update, no_update
+        
+        # Récupérer le test à supprimer
+        test_to_delete = tests[clicked_idx]
+        test_id = test_to_delete.get("id")
+        
+        # Supprimer le test
+        new_tests = [t for i, t in enumerate(tests) if i != clicked_idx]
+        
+        # Message de statut
+        status_msg = f"✅ Test '{test_id}' supprimé."
+        
+        return new_tests, dbc.Alert(status_msg, color="success", dismissable=True, duration=4000)
+    
+    @app.callback(
+        [Output("test-type", "value", allow_duplicate=True),
+         Output("test-tabs", "active_tab", allow_duplicate=True),
+         Output("test-action-status", "children", allow_duplicate=True)],
+        Input({"type": "edit-test", "index": ALL}, "n_clicks"),
+        State("store_tests", "data"),
+        prevent_initial_call=True
+    )
+    def edit_test(n_clicks_list, tests):
+        """Charge le test pour modification"""
+        if not any(n_clicks_list):
+            return no_update, no_update, no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not tests or clicked_idx >= len(tests):
+            return no_update, no_update, no_update
+        
+        # Récupérer le test à modifier
+        test = tests[clicked_idx]
+        
+        # Créer un message détaillé avec toutes les valeurs
+        threshold = test.get("threshold", {})
+        ref = test.get("ref", {})
+        
+        values_list = [
+            html.Li(f"Type: {test.get('type', 'N/A')}"),
+            html.Li(f"ID: {test.get('id', 'N/A')}"),
+            html.Li(f"Sévérité: {test.get('severity', 'medium')}"),
+            html.Li(f"Échantillon si échec: {'Oui' if test.get('sample_on_fail') else 'Non'}"),
+        ]
+        
+        if test.get('database'):
+            values_list.append(html.Li(f"Database: {test.get('database')}"))
+        if test.get('column'):
+            values_list.append(html.Li(f"Colonne: {test.get('column')}"))
+        if threshold:
+            values_list.append(html.Li(f"Seuil: {threshold.get('op', '')} {threshold.get('value', '')}"))
+        if test.get('min') is not None:
+            values_list.append(html.Li(f"Min: {test.get('min')}"))
+        if test.get('max') is not None:
+            values_list.append(html.Li(f"Max: {test.get('max')}"))
+        if test.get('pattern'):
+            values_list.append(html.Li(f"Pattern: {test.get('pattern')}"))
+        if ref:
+            if ref.get('metric'):
+                values_list.append(html.Li(f"Référence: metric:{ref.get('metric')}"))
+            elif ref.get('database'):
+                values_list.append(html.Li(f"Référence DB: {ref.get('database')}, Colonne: {ref.get('column', 'N/A')}"))
+        
+        values_text = html.Div([
+            html.P(f"✏️ Pour modifier le test '{test.get('id')}', utilisez les valeurs suivantes :", className="mb-2"),
+            html.Ul(values_list),
+            html.P("📝 Saisissez ces valeurs dans le formulaire, puis cliquez sur 'Ajouter' pour mettre à jour.", className="mt-2 text-primary")
+        ])
+        
+        return (
+            test.get("type", ""),  # Pré-sélectionner le type
+            "tab-test-create",  # Basculer vers l'onglet de création
+            dbc.Alert(values_text, color="info", dismissable=True)
+        )
+    
+    @app.callback(
+        Output("test-action-status", "children", allow_duplicate=True),
+        Input({"type": "export-test", "index": ALL}, "n_clicks"),
+        State("store_tests", "data"),
+        prevent_initial_call=True
+    )
+    def export_test(n_clicks_list, tests):
+        """Exporte un test en JSON"""
+        if not any(n_clicks_list):
+            return no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not tests or clicked_idx >= len(tests):
+            return no_update
+        
+        test = tests[clicked_idx]
+        test_id = test.get("id")
+        
+        # Créer l'export JSON
+        export_json = json.dumps(test, ensure_ascii=False, indent=2)
+        
+        return dbc.Alert([
+            html.P(f"📥 Export JSON du test '{test_id}':", className="mb-2"),
+            html.Pre(export_json, style={
+                "background": "#111", 
+                "color": "#0f0", 
+                "padding": "10px", 
+                "borderRadius": "4px",
+                "fontSize": "12px"
+            })
+        ], color="dark", dismissable=True)

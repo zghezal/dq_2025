@@ -50,11 +50,15 @@ The DQ Builder app helps users:
   - **Métriques**: Format M-001, M-002, M-003... (incrémentation automatique sans doublons)
   - **Tests**: Format T-001, T-002, T-003... (incrémentation automatique sans doublons)
   - Laissez le champ ID vide pour génération automatique
-- **Metric Actions**:
+- **Metric Actions** (Onglet Visualiser):
   - ✏️ **Edit button**: Load metric into form for modification
   - 🗑️ **Delete button**: Remove metric with cascade deletion of associated tests
   - 🖨️ **Print button**: Mark metric for printing (visible for compatible types)
   - Cascade deletion logic: Automatically removes foreign_key tests that reference deleted metrics
+- **Test Actions** (Onglet Visualiser):
+  - ✏️ **Edit button**: Load test into form for modification
+  - 🗑️ **Delete button**: Remove test from configuration
+  - 📥 **Export button**: Display test as JSON for inspection or backup
 - **Form Enhancements**:
   - **Visual grouping with Cards**: Parameters organized into logical sections
     - Metrics: Identification, Configuration Dataset, Filtres/Options, Prévisualisation
@@ -63,11 +67,12 @@ The DQ Builder app helps users:
   - **Helpful placeholders**: Contextual examples in all input fields
   - **Inline help text**: Small descriptions under complex fields
 - **Benefits**: 
-  - Complete metric/test lifecycle management
+  - Complete metric/test lifecycle management with full CRUD operations
   - Improved form usability with clear organization
-  - Safer operations with cascade deletion
+  - Safer operations with cascade deletion for metrics
   - Better user guidance with defaults and examples
   - Guaranteed unique IDs with clean format
+  - JSON export capability for tests
 
 ### Build Page UI Redesign (Oct 14, 2025)
 **Tabbed Interface**: Transformed vertical step-by-step wizard into modern tabbed interface
