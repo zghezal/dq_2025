@@ -1,74 +1,84 @@
 # DQ Builder — Data Quality Management App
 
 ## Overview
-This is a Python Dash application for managing Data Quality (DQ) configurations. It provides a web interface to build, manage, and publish data quality metrics and tests for various data streams and projects.
+This is a Dash-based web application for managing Data Quality (DQ) configurations. The app allows users to create, configure, and publish data quality metrics and tests for datasets.
 
-**Current State:** Fully functional and ready to use. The app is running on port 5000 with all dependencies installed.
+## Purpose
+The DQ Builder app helps users:
+- Select and configure datasets with aliases
+- Define metrics (row_count, sum, mean, distinct_count, ratio)
+- Create data quality tests (null_rate, uniqueness, range, regex, foreign_key)
+- Preview and publish configurations in JSON or YAML format
 
-## Recent Changes
-- **2024-10-14:** Initial Replit setup completed
-  - Installed Python 3.11 and dependencies (Dash, dash-bootstrap-components, PyYAML)
-  - Created necessary directories (datasets/, managed_folders/)
-  - Configured workflow to run on port 5000
-  - Set up deployment configuration for autoscale
-  - Created .gitignore for Python projects
-
-## Project Architecture
-
-### File Structure
+## Project Structure
 ```
 .
-├── app.py              # Main Dash application with Bootstrap UI
+├── app.py              # Main Dash application (multi-page app)
 ├── webapp_app.py       # Legacy Dataiku DSS webapp version
 ├── dataiku_stub.py     # Local development stub for Dataiku API
-├── run.py              # Entry point to run the app
+├── run.py              # Application entry point
 ├── requirements.txt    # Python dependencies
-├── datasets/           # Directory for CSV datasets
-└── managed_folders/    # Directory for DQ configuration files
+├── datasets/          # Directory for CSV datasets
+└── managed_folders/   # Directory for published configurations
 ```
 
-### Key Components
-1. **Main App (app.py):** Modern Dash application with:
-   - Multi-page routing (Home, DQ Management, Build)
-   - Bootstrap styling for responsive UI
-   - Data quality metric builder
-   - Test configuration interface
-   - Configuration preview and publication
+## Technology Stack
+- **Framework**: Dash 2.15.0+ with Bootstrap components
+- **Python**: 3.11
+- **UI**: dash-bootstrap-components for responsive layout
+- **Config Format**: JSON/YAML via PyYAML
 
-2. **Dataiku Stub (dataiku_stub.py):** Local development implementation that:
-   - Simulates Dataiku API for standalone use
-   - Reads datasets from `./datasets/*.csv`
-   - Stores configurations in `./managed_folders/`
+## Recent Changes (Import Setup - Oct 2025)
 
-3. **Legacy Webapp (webapp_app.py):** Older Dataiku DSS-specific version
+### Fixed Issues
+1. **Multi-page callback error**: Fixed breadcrumb callback that was referencing components from other pages
+   - Simplified breadcrumb callback to only use pathname
+   - Added validation_layout for proper Dash multi-page support
 
-### Features
-- **Stream & Project Management:** Organize DQ configs by stream and project
-- **Dataset Management:** Import datasets and assign aliases
-- **Metric Builder:** Create metrics (row_count, sum, mean, distinct_count, ratio)
-- **Test Builder:** Configure tests (null_rate, uniqueness, range, regex, foreign_key)
-- **Preview & Export:** Preview configs in JSON/YAML and publish to managed folders
+### Setup Changes
+- Created `run.py` to properly run the app on 0.0.0.0:5000
+- Added `.gitignore` for Python project
+- Created necessary directories (`datasets/`, `managed_folders/`)
+- Configured workflow to run on port 5000 with webview output
+- Set up deployment configuration for autoscale
 
-## Running the Application
+## Running the App
 
 ### Development
 The app runs automatically via the configured workflow:
-- **Command:** `python run.py`
-- **Port:** 5000
-- **Host:** 0.0.0.0 (accessible from outside)
+```bash
+python run.py
+```
+
+The app will be available at http://0.0.0.0:5000
 
 ### Deployment
-Configured for autoscale deployment:
-- Deployment target: autoscale (stateless web app)
-- Run command: `python run.py`
+Deployment is configured for autoscale mode, suitable for this stateless web application.
+
+## App Architecture
+
+### Multi-Page Structure
+- **Home Page** (`/`): Welcome page with navigation
+- **DQ Management** (`/dq`): Select stream, project, and DQ point; create or manage configurations
+- **Build Page** (`/build`): Four-step wizard for creating DQ configurations
+  1. Select datasets and assign aliases
+  2. Define metrics
+  3. Create tests
+  4. Preview and publish
+
+### Key Features
+- **Dataset Management**: Uses local CSV files from `./datasets/` directory
+- **Metric Types**: row_count, sum, mean, distinct_count, ratio
+- **Test Types**: null_rate, uniqueness, range, regex, foreign_key
+- **Publication**: Saves configurations to managed folders in JSON or YAML format
+- **Local Mode**: Uses `dataiku_stub.py` to simulate Dataiku API for standalone development
 
 ## Dependencies
-- dash >= 2.15.0
-- dash-bootstrap-components >= 1.5.0
-- PyYAML >= 6.0.1
+- dash>=2.15.0
+- dash-bootstrap-components>=1.5.0
+- PyYAML>=6.0.1
 
 ## Notes
-- The app uses Bootstrap theming for a modern UI
-- Multi-page app uses client-side routing with dcc.Location
-- Data is stored locally in CSV files and managed folders
-- Compatible with Dataiku DSS when deployed in that environment
+- The app includes a validation_layout to support callbacks across multiple pages
+- Legacy `webapp_app.py` is kept for reference but not used in this deployment
+- Console warnings about React lifecycle methods are from Dash's internal React components and can be safely ignored

@@ -191,12 +191,19 @@ app.layout = html.Div([
     navbar(),
     html.Div(id="page-content", children=home_page())
 ])
+
+app.validation_layout = html.Div([
+    dcc.Location(id="url", refresh=False),
+    navbar(),
+    html.Div(id="page-content"),
+    home_page(),
+    dq_page(),
+    build_page()
+])
+
 @app.callback(Output("crumb","children"),
-              Input("url","pathname"),
-              Input("dq-stream","value"),
-              Input("dq-project","value"),
-              Input("dq-point","value"))
-def update_crumb(pathname, stream, project, dq_point):
+              Input("url","pathname"))
+def update_crumb(pathname):
     parts = []
     if pathname == "/":
         parts.append("Home")
@@ -204,13 +211,7 @@ def update_crumb(pathname, stream, project, dq_point):
         parts.append("DQ Management")
     elif pathname == "/build":
         parts.append("Build")
-    if stream:
-        parts.append(stream)
-    if project:
-        parts.append(project)
-    if dq_point:
-        parts.append(dq_point)
-    return " / ".join(parts)
+    return " / ".join(parts) if parts else ""
 
 @app.callback(
     Output("dq-project","options"),
