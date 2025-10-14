@@ -108,7 +108,7 @@ def dq_page():
                 dbc.Col([html.Label("DQ Point"), dcc.Dropdown(id="dq-point", options=[{"label":p,"value":p} for p in DQ_POINTS], placeholder="Select DQ point", clearable=False)], md=4),
             ]),
             html.Div(id="dq-list", className="mt-3"),
-            dbc.Button("Créer de scratch", id="dq-create", color="success", className="mt-2 me-2"),
+            html.A(id="dq-create", className="btn btn-success mt-2 me-2", children="Créer de scratch"),
             dbc.Button("Actualiser", id="dq-refresh", color="secondary", className="mt-2"),
         ])])
     ], fluid=True)
@@ -250,24 +250,19 @@ def update_dq_list(_n, stream, project, dq_point):
     return html.Div([hint, dbc.ListGroup(items)])
 
 @app.callback(
-    Output("dq-url","pathname"),
-    Output("dq-url","search"),
-    Input("dq-create","n_clicks"),
-    State("dq-stream","value"),
-    State("dq-project","value"),
-    State("dq-point","value"),
-    prevent_initial_call=True
+    Output("dq-create","href"),
+    Input("dq-stream","value"),
+    Input("dq-project","value"),
+    Input("dq-point","value")
 )
-def on_create_from_scratch(n, stream, project, dq_point):
-    if not n:
-        return no_update, no_update
-    # Route to build page with context
+def update_create_link(stream, project, dq_point):
+    # Build the href dynamically based on dropdown selections
     q = []
     if stream: q.append(f"stream={stream}")
     if project: q.append(f"project={project}")
     if dq_point: q.append(f"dq_point={dq_point}")
     query_string = ("?" + "&".join(q)) if q else ""
-    return "/build", query_string
+    return f"/build{query_string}"
 
 @app.callback(Output("page-content","children"), Input("url","pathname"))
 def display_page(pathname):

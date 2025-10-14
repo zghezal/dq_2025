@@ -35,6 +35,15 @@ The DQ Builder app helps users:
    - Simplified breadcrumb callback to only use pathname
    - Added validation_layout for proper Dash multi-page support
 
+2. **Test column callback error** (Oct 14, 2025): Fixed console error about test-col component not existing
+   - Changed `build-url` pathname from Input to State in fill_test_columns and fill_test_ref_columns callbacks
+   - Removed unnecessary pathname trigger that fired before components were rendered
+
+3. **Navigation from DQ page to Build page** (Oct 14, 2025): Fixed "Créer de scratch" button navigation
+   - Converted button to html.A link with Bootstrap button styling
+   - Added dynamic href callback that updates based on stream/project/dq_point dropdown selections
+   - URL-decode pathname in display_page callback to handle encoded query parameters
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project
