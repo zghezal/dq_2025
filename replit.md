@@ -13,13 +13,25 @@ The DQ Builder app helps users:
 ## Project Structure
 ```
 .
-├── app.py              # Main Dash application (multi-page app)
-├── webapp_app.py       # Legacy Dataiku DSS webapp version
-├── dataiku_stub.py     # Local development stub for Dataiku API
-├── run.py              # Application entry point
-├── requirements.txt    # Python dependencies
-├── datasets/          # Directory for CSV datasets
-└── managed_folders/   # Directory for published configurations
+├── app.py                 # Main application entry point
+├── run.py                 # Production server launcher
+├── dataiku_stub.py        # Local development stub for Dataiku API
+├── webapp_app.py          # Legacy Dataiku DSS webapp version (not used)
+├── requirements.txt       # Python dependencies
+├── src/                   # Application source code (modular structure)
+│   ├── config.py          # Constants and configuration (STREAMS, DATASET_MAPPING)
+│   ├── utils.py           # Utility functions (helpers, data access)
+│   ├── layouts/           # UI components
+│   │   ├── navbar.py      # Navigation bar and stepper
+│   │   ├── home.py        # Home page layout
+│   │   ├── dq.py          # DQ Management page layout
+│   │   └── build.py       # Build page layout (wizard)
+│   └── callbacks/         # Business logic
+│       ├── navigation.py  # Navigation and routing callbacks
+│       ├── dq.py          # DQ Management page callbacks
+│       └── build.py       # Build page callbacks (datasets, metrics, tests, publication)
+├── datasets/              # Directory for CSV datasets
+└── managed_folders/       # Directory for published configurations
 ```
 
 ## Technology Stack
@@ -28,7 +40,18 @@ The DQ Builder app helps users:
 - **UI**: dash-bootstrap-components for responsive layout
 - **Config Format**: JSON/YAML via PyYAML
 
-## Recent Changes (Import Setup - Oct 2025)
+## Recent Changes
+
+### Code Refactoring (Oct 14, 2025)
+**Modular Architecture**: Split monolithic `app.py` (925 lines) into organized modules
+- **src/config.py**: Configuration constants and Dataiku client setup
+- **src/utils.py**: Utility functions (data access, helpers, first() pattern matching helper)
+- **src/layouts/**: UI components separated by page (navbar, home, dq, build)
+- **src/callbacks/**: Business logic separated by functionality (navigation, dq, build)
+- **Benefits**: Improved maintainability, clearer code organization, easier debugging
+- **app.py**: Now a clean 40-line entry point that assembles the application
+
+### Import Setup (Oct 2025)
 
 ### Fixed Issues
 1. **Multi-page callback error**: Fixed breadcrumb callback that was referencing components from other pages
@@ -77,12 +100,18 @@ The DQ Builder app helps users:
    - **Solution**: Component now always rendered but hidden with `display: none` when not needed
    - **Result**: No more callback errors, component always exists in DOM for callbacks to target
 
+9. **Column loading bug** (Oct 14, 2025): Fixed columns not loading for metrics and tests
+   - **Root cause**: `get_columns_for_dataset()` only used Dataiku API, which fails in local mode
+   - **Solution**: Added fallback to read CSV file headers when Dataiku is unavailable
+   - **Result**: Columns now load correctly from local CSV files in all environments
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project
 - Created necessary directories (`datasets/`, `managed_folders/`)
 - Configured workflow to run on port 5000 with webview output
 - Set up deployment configuration for autoscale
+- Refactored codebase into modular structure under `src/` directory
 
 ## Running the App
 
@@ -99,13 +128,20 @@ Deployment is configured for autoscale mode, suitable for this stateless web app
 
 ## App Architecture
 
+### Modular Code Organization
+- **Entry Point** (`app.py`): Initializes Dash app, imports layouts and callbacks
+- **Configuration** (`src/config.py`): Centralized constants and settings
+- **Utils** (`src/utils.py`): Shared utility functions and helpers
+- **Layouts** (`src/layouts/`): UI components organized by page
+- **Callbacks** (`src/callbacks/`): Business logic organized by functionality
+
 ### Multi-Page Structure
 - **Home Page** (`/`): Welcome page with navigation
 - **DQ Management** (`/dq`): Select stream, project, and DQ point; create or manage configurations
 - **Build Page** (`/build`): Four-step wizard for creating DQ configurations
   1. Select datasets and assign aliases
-  2. Define metrics
-  3. Create tests
+  2. Define metrics (tabbed interface)
+  3. Create tests (tabbed interface)
   4. Preview and publish
 
 ### Key Features
@@ -114,6 +150,7 @@ Deployment is configured for autoscale mode, suitable for this stateless web app
 - **Test Types**: null_rate, uniqueness, range, regex, foreign_key
 - **Publication**: Saves configurations to managed folders in JSON or YAML format
 - **Local Mode**: Uses `dataiku_stub.py` to simulate Dataiku API for standalone development
+- **Pattern Matching Helper**: `first()` function safely handles Dash ALL pattern matching
 
 ## Dependencies
 - dash>=2.15.0
