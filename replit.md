@@ -57,6 +57,13 @@ The DQ Builder app helps users:
    - **Solution**: Removed `debounce=True` from all Input fields (metric-id, test-id, and all text inputs)
    - **Result**: Preview updates in real-time as user types, ensuring complete values are captured when adding metrics/tests
 
+6. **Tabbed interface for Steps 2 & 3** (Oct 14, 2025): Added tabs to organize Metrics and Tests sections
+   - **Implementation**: Used dbc.Tabs to separate creation forms from defined lists
+   - **Step 2 (Metrics)**: Two tabs - "➕ Créer une métrique" and "📋 Métriques définies"
+   - **Step 3 (Tests)**: Two tabs - "➕ Créer un test" and "📋 Tests définis"
+   - **Auto-switch**: After adding a metric/test, automatically switches to the "définies" tab to show the result
+   - **Benefit**: More compact interface, reduces visual clutter once items are configured
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project

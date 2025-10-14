@@ -156,40 +156,52 @@ def build_page():
         ])], className="mb-3 shadow-sm"),
 
         stepper(1),
-        dbc.Card([dbc.CardHeader("Étape 2 — Ajouter une métrique"), dbc.CardBody([
-            html.Label("Type de métrique"),
-            dcc.Dropdown(id="metric-type", options=[
-                {"label":"row_count","value":"row_count"},
-                {"label":"sum","value":"sum"},
-                {"label":"mean","value":"mean"},
-                {"label":"distinct_count","value":"distinct_count"},
-                {"label":"ratio (metricA / metricB)","value":"ratio"}
-            ], placeholder="Choisir le type", clearable=False, persistence=True, persistence_type="session"),
-            html.Div(id="metric-params", className="mt-3"),
-            dbc.Button("Forcer l’aperçu", id="force-metric-preview", color="secondary", className="mt-2 me-2"),
-            dbc.Button("Ajouter la métrique", id="add-metric", color="primary", className="mt-2"),
-            html.Div(id="add-metric-status", className="text-success mt-2"),
-            html.Hr(),
-            html.H5("Métriques définies"),
-            html.Div(id="metrics-list")
+        dbc.Card([dbc.CardHeader("Étape 2 — Métriques"), dbc.CardBody([
+            dbc.Tabs([
+                dbc.Tab(label="➕ Créer une métrique", tab_id="tab-metric-create", children=[
+                    html.Div(className="mt-3", children=[
+                        html.Label("Type de métrique"),
+                        dcc.Dropdown(id="metric-type", options=[
+                            {"label":"row_count","value":"row_count"},
+                            {"label":"sum","value":"sum"},
+                            {"label":"mean","value":"mean"},
+                            {"label":"distinct_count","value":"distinct_count"},
+                            {"label":"ratio (metricA / metricB)","value":"ratio"}
+                        ], placeholder="Choisir le type", clearable=False, persistence=True, persistence_type="session"),
+                        html.Div(id="metric-params", className="mt-3"),
+                        dbc.Button("Forcer l'aperçu", id="force-metric-preview", color="secondary", className="mt-2 me-2"),
+                        dbc.Button("Ajouter la métrique", id="add-metric", color="primary", className="mt-2"),
+                        html.Div(id="add-metric-status", className="text-success mt-2"),
+                    ])
+                ]),
+                dbc.Tab(label="📋 Métriques définies", tab_id="tab-metric-list", children=[
+                    html.Div(id="metrics-list", className="mt-3")
+                ]),
+            ], id="metric-tabs", active_tab="tab-metric-create")
         ])], className="mb-3 shadow-sm"),
 
         stepper(2),
-        dbc.Card([dbc.CardHeader("Étape 3 — Ajouter un test"), dbc.CardBody([
-            html.Label("Type de test"),
-            dcc.Dropdown(id="test-type", options=[
-                {"label":"null_rate","value":"null_rate"},
-                {"label":"uniqueness","value":"uniqueness"},
-                {"label":"range","value":"range"},
-                {"label":"regex","value":"regex"},
-                {"label":"foreign_key","value":"foreign_key"}
-            ], placeholder="Choisir le type", clearable=False, persistence=True, persistence_type="session"),
-            html.Div(id="test-params", className="mt-3"),
-            dbc.Button("Ajouter le test", id="add-test", color="primary", className="mt-2"),
-            html.Div(id="add-test-status", className="text-success mt-2"),
-            html.Hr(),
-            html.H5("Tests définis"),
-            html.Div(id="tests-list")
+        dbc.Card([dbc.CardHeader("Étape 3 — Tests"), dbc.CardBody([
+            dbc.Tabs([
+                dbc.Tab(label="➕ Créer un test", tab_id="tab-test-create", children=[
+                    html.Div(className="mt-3", children=[
+                        html.Label("Type de test"),
+                        dcc.Dropdown(id="test-type", options=[
+                            {"label":"null_rate","value":"null_rate"},
+                            {"label":"uniqueness","value":"uniqueness"},
+                            {"label":"range","value":"range"},
+                            {"label":"regex","value":"regex"},
+                            {"label":"foreign_key","value":"foreign_key"}
+                        ], placeholder="Choisir le type", clearable=False, persistence=True, persistence_type="session"),
+                        html.Div(id="test-params", className="mt-3"),
+                        dbc.Button("Ajouter le test", id="add-test", color="primary", className="mt-2"),
+                        html.Div(id="add-test-status", className="text-success mt-2"),
+                    ])
+                ]),
+                dbc.Tab(label="📋 Tests définis", tab_id="tab-test-list", children=[
+                    html.Div(id="tests-list", className="mt-3")
+                ]),
+            ], id="test-tabs", active_tab="tab-test-create")
         ])], className="mb-3 shadow-sm"),
 
         stepper(3),
@@ -486,6 +498,7 @@ def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mex
     Output("add-metric-status","children"),
     Output("store_metrics","data"),
     Output("metrics-list","children"),
+    Output("metric-tabs","active_tab"),
     Input("add-metric","n_clicks"),
     State({"role":"metric-preview"},"children", ALL),
     State("store_metrics","data"),
@@ -498,7 +511,7 @@ def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mex
 )
 def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list):
     if not n:
-        return "", metrics, ""
+        return "", metrics, "", no_update
     preview_text = (preview_list[0] if preview_list else None)
     m = None
     if preview_text:
@@ -513,7 +526,7 @@ def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, m
         mwhere= (mwhere_list[0]if mwhere_list else None)
         mexpr = (mexpr_list[0] if mexpr_list else None)
         if not mtype:
-            return "Prévisualisation vide/invalide.", metrics, no_update
+            return "Prévisualisation vide/invalide.", metrics, no_update, no_update
         m = {"id": (mid or safe_id(f"m_{mtype}_{mdb or ''}_{mcol or ''}")), "type": mtype}
         if mtype in ("row_count","sum","mean"):
             m.update({"database": mdb or ""})
@@ -534,7 +547,7 @@ def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, m
     m["id"] = uid
     metrics.append(m)
     items = [html.Pre(json.dumps(x, ensure_ascii=False, indent=2), className="p-2 mb-2", style={"background":"#111","color":"#eee"}) for x in metrics]
-    return f"Métrique ajoutée: {uid}", metrics, html.Div(items)
+    return f"Métrique ajoutée: {uid}", metrics, html.Div(items), "tab-metric-list"
 
 # ---- Tests ----
 @app.callback(Output("test-params","children"),
@@ -699,6 +712,7 @@ def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list
     Output("add-test-status","children"),
     Output("store_tests","data"),
     Output("tests-list","children"),
+    Output("test-tabs","active_tab"),
     Input("add-test","n_clicks"),
     State({"role":"test-preview"},"children", ALL),
     State("store_tests","data"),
@@ -718,7 +732,7 @@ def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list
 )
 def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
     if not n:
-        return "", tests, ""
+        return "", tests, "", no_update
     preview_text = (preview_list[0] if preview_list else None)
     t = None
     if preview_text:
@@ -729,7 +743,7 @@ def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_lis
     if t is None:
         def first(lst, default=None): return lst[0] if lst else default
         if not ttype:
-            return "Prévisualisation vide/invalide.", tests, no_update
+            return "Prévisualisation vide/invalide.", tests, no_update, no_update
         tid, sev, sof = first(tid_list), first(sev_list, "medium"), first(sof_list, [])
         db, col = first(db_list), first(col_list)
         op, thr = first(op_list), first(thr_list)
@@ -759,7 +773,7 @@ def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_lis
     t["id"] = uid
     tests.append(t)
     items = [html.Pre(json.dumps(x, ensure_ascii=False, indent=2), className="p-2 mb-2", style={"background":"#111","color":"#eee"}) for x in tests]
-    return f"Test ajouté: {uid}", tests, html.Div(items)
+    return f"Test ajouté: {uid}", tests, html.Div(items), "tab-test-list"
 
 @app.callback(Output("cfg-preview","children"),
               Input("store_datasets","data"),
