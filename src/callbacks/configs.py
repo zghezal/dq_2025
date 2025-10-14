@@ -98,7 +98,7 @@ def register_configs_callbacks(app):
                     "type": item.get("type", "N/A"),
                     "database": item.get("database", "N/A"),
                     "column": item.get("column", "-"),
-                    "actions": "👁️ Détails"
+                    "actions": "👁️"
                 }
                 data.append(row)
         
@@ -119,7 +119,7 @@ def register_configs_callbacks(app):
                     "type": item.get("type", "N/A"),
                     "metric": item.get("metric", "N/A"),
                     "description": item.get("description", "-"),
-                    "actions": "👁️ Détails"
+                    "actions": "👁️"
                 }
                 data.append(row)
         
