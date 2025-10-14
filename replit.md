@@ -52,6 +52,11 @@ The DQ Builder app helps users:
    - Context banner now correctly displays Stream/Project from URL parameters
    - Dataset dropdown now correctly filters datasets based on URL context
 
+5. **Input field truncation issue** (Oct 14, 2025): Fixed ID and database fields capturing only first character
+   - **Root cause**: Input fields had `debounce=True`, causing callbacks to fire only after blur/Enter, leading to stale values
+   - **Solution**: Removed `debounce=True` from all Input fields (metric-id, test-id, and all text inputs)
+   - **Result**: Preview updates in real-time as user types, ensuring complete values are captured when adding metrics/tests
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project

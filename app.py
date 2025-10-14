@@ -351,7 +351,7 @@ def render_alias_mapper(selected):
         rows.append(dbc.Row([
             dbc.Col(html.Div(ds), md=6),
             dbc.Col(dcc.Input(id={"role":"alias-input","ds":ds}, type="text", value=ds.lower(),
-                              style={"width":"100%"}, debounce=True, persistence=True,
+                              style={"width":"100%"}, persistence=True,
                               persistence_type="session", autoComplete="off"), md=6)
         ], className="py-1 border-bottom"))
     return dbc.Container(rows, fluid=True)
@@ -390,8 +390,7 @@ def render_metric_form(metric_type, ds_data):
     common_top = dbc.Row([
         dbc.Col([html.Label("ID de la métrique"),
                  dcc.Input(id={"role":"metric-id"}, type="text", value="", style={"width":"100%"},
-                           debounce=True, persistence=True, persistence_type="session",
-                           autoComplete="off")], md=6),
+                           persistence=True, persistence_type="session")], md=6),
         dbc.Col([html.Label("Base (alias)"),
                  dcc.Dropdown(id={"role":"metric-db"}, options=[{"label":a,"value":a} for a in ds_aliases],
                               clearable=False, persistence=True, persistence_type="session")], md=6),
@@ -408,17 +407,17 @@ def render_metric_form(metric_type, ds_data):
     if metric_type == "row_count":
         extras = dbc.Row([dbc.Col([html.Label("Filtre WHERE (optionnel)"),
                                    dcc.Input(id={"role":"metric-where"}, type="text", value="", style={"width":"100%"},
-                                             debounce=True, persistence=True, persistence_type="session",
+                                             persistence=True, persistence_type="session",
                                              autoComplete="off")], md=12)])
     elif metric_type in ("sum","mean"):
         extras = dbc.Row([dbc.Col([html.Label("Filtre WHERE (optionnel)"),
                                    dcc.Input(id={"role":"metric-where"}, type="text", value="", style={"width":"100%"},
-                                             debounce=True, persistence=True, persistence_type="session",
+                                             persistence=True, persistence_type="session",
                                              autoComplete="off")], md=12)])
     elif metric_type == "ratio":
         extras = dbc.Row([dbc.Col([html.Label("Expr (metricA / metricB) — IDs de métriques déjà définies"),
                                    dcc.Input(id={"role":"metric-expr"}, type="text", value="", style={"width":"100%"},
-                                             debounce=True, persistence=True, persistence_type="session",
+                                             persistence=True, persistence_type="session",
                                              autoComplete="off")], md=12)])
 
     helper = html.Div(id="metric-helper", className="text-muted small mt-2")
@@ -552,7 +551,7 @@ def render_test_form(test_type, ds_data, metrics):
     common = dbc.Row([
         dbc.Col([html.Label("ID du test"),
                  dcc.Input(id={"role":"test-id"}, type="text", value="", style={"width":"100%"},
-                           debounce=True, persistence=True, persistence_type="session",
+                           persistence=True, persistence_type="session",
                            autoComplete="off")], md=6),
         dbc.Col([html.Label("Sévérité"),
                  dcc.Dropdown(id={"role":"test-sev"},
@@ -575,18 +574,17 @@ def render_test_form(test_type, ds_data, metrics):
         if test_type == "range":
             extra = dbc.Row([
                 dbc.Col([html.Label("Min"), dcc.Input(id={"role":"test-min"}, type="text", value="0",
-                                                      debounce=True, persistence=True, persistence_type="session",
+                                                      persistence=True, persistence_type="session",
                                                       autoComplete="off")], md=3),
                 dbc.Col([html.Label("Max"), dcc.Input(id={"role":"test-max"}, type="text", value="100",
-                                                      debounce=True, persistence=True, persistence_type="session",
+                                                      persistence=True, persistence_type="session",
                                                       autoComplete="off")], md=3),
             ])
         if test_type == "regex":
             extra = dbc.Row([dbc.Col([html.Label("Pattern (regex)"),
                                       dcc.Input(id={"role":"test-pattern"}, type="text",
                                                 value=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
-                                                style={"width":"100%"}, debounce=True,
-                                                persistence=True, persistence_type="session",
+                                                style={"width":"100%"}, persistence=True, persistence_type="session",
                                                 autoComplete="off")], md=12)])
         thresh = dbc.Row([
             dbc.Col([html.Label("Opérateur"),
@@ -595,7 +593,7 @@ def render_test_form(test_type, ds_data, metrics):
                                   value="<=", clearable=False, persistence=True, persistence_type="session")], md=3),
             dbc.Col([html.Label("Valeur"),
                      dcc.Input(id={"role":"test-thr"}, type="text", value="0.005",
-                               debounce=True, persistence=True, persistence_type="session",
+                               persistence=True, persistence_type="session",
                                autoComplete="off")], md=3),
         ])
         preview = html.Div([html.H6("Prévisualisation du test"),
