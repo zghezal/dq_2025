@@ -46,6 +46,10 @@ The DQ Builder app helps users:
 
 ### Enhanced Metric/Test Management (Oct 14, 2025)
 **CRUD Operations & Visual Improvements**: Added full management capabilities for metrics and tests
+- **Auto-generated IDs**:
+  - **Métriques**: Format M-001, M-002, M-003... (incrémentation automatique sans doublons)
+  - **Tests**: Format T-001, T-002, T-003... (incrémentation automatique sans doublons)
+  - Laissez le champ ID vide pour génération automatique
 - **Metric Actions**:
   - ✏️ **Edit button**: Load metric into form for modification
   - 🗑️ **Delete button**: Remove metric with cascade deletion of associated tests
@@ -63,6 +67,7 @@ The DQ Builder app helps users:
   - Improved form usability with clear organization
   - Safer operations with cascade deletion
   - Better user guidance with defaults and examples
+  - Guaranteed unique IDs with clean format
 
 ### Build Page UI Redesign (Oct 14, 2025)
 **Tabbed Interface**: Transformed vertical step-by-step wizard into modern tabbed interface

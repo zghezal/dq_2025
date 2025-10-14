@@ -143,12 +143,12 @@ def register_build_callbacks(app):
                             id={"role": "metric-id"},
                             type="text",
                             value="",
-                            placeholder=f"Ex: m_{metric_type}_{ds_aliases[0] if ds_aliases else 'db'}_001",
+                            placeholder="Ex: M-001 (généré automatiquement si vide)",
                             style={"width": "100%"},
                             persistence=True,
                             persistence_type="session"
                         ),
-                        html.Small("Laissez vide pour générer automatiquement", className="text-muted")
+                        html.Small("Laissez vide pour auto-générer M-XXX", className="text-muted")
                     ], md=12)
                 ])
             ])
@@ -311,7 +311,7 @@ def register_build_callbacks(app):
         mwhere = first(mwhere_list)
         mexpr = first(mexpr_list)
 
-        obj = {"id": (mid or safe_id(f"m_{mtype}_{mdb or ''}_{mcol or ''}")), "type": mtype}
+        obj = {"id": (mid or "M-XXX (auto)"), "type": mtype}
         if mtype in ("row_count", "sum", "mean"):
             obj.update({"database": mdb or ""})
             if mtype in ("sum", "mean"):
@@ -359,7 +359,7 @@ def register_build_callbacks(app):
             mexpr = first(mexpr_list)
             if not mtype:
                 return "Prévisualisation vide/invalide.", metrics, no_update, no_update
-            m = {"id": (mid or safe_id(f"m_{mtype}_{mdb or ''}_{mcol or ''}")), "type": mtype}
+            m = {"id": mid, "type": mtype}
             if mtype in ("row_count", "sum", "mean"):
                 m.update({"database": mdb or ""})
                 if mtype in ("sum", "mean"):
@@ -370,14 +370,30 @@ def register_build_callbacks(app):
                 m.update({"database": mdb or "", "column": mcol or ""})
             elif mtype == "ratio":
                 m.update({"expr": (mexpr or "")})
+        
         metrics = (metrics or [])
-        existing = {x.get("id") for x in metrics}
-        base_id = m.get("id") or "m"
-        uid, k = base_id, 2
-        while uid in existing:
-            uid = f"{base_id}_{k}"
-            k += 1
-        m["id"] = uid
+        existing_ids = {x.get("id") for x in metrics}
+        
+        # Générer un ID unique au format M-XXX
+        if not m.get("id") or m.get("id") in existing_ids:
+            # Extraire les numéros existants
+            existing_numbers = []
+            for metric in metrics:
+                metric_id = metric.get("id", "")
+                if metric_id.startswith("M-"):
+                    try:
+                        num = int(metric_id.split("-")[1])
+                        existing_numbers.append(num)
+                    except (ValueError, IndexError):
+                        pass
+            
+            # Trouver le prochain numéro disponible
+            next_num = 1
+            while next_num in existing_numbers:
+                next_num += 1
+            
+            m["id"] = f"M-{next_num:03d}"
+        
         metrics.append(m)
         items = [
             html.Pre(
@@ -386,7 +402,7 @@ def register_build_callbacks(app):
                 style={"background": "#111", "color": "#eee"}
             ) for x in metrics
         ]
-        return f"Métrique ajoutée: {uid}", metrics, html.Div(items), "tab-metric-viz"
+        return f"Métrique ajoutée: {m['id']}", metrics, html.Div(items), "tab-metric-viz"
 
     # ===== Tests =====
     
@@ -415,13 +431,13 @@ def register_build_callbacks(app):
                             id={"role": "test-id"},
                             type="text",
                             value="",
-                            placeholder=f"Ex: t_{test_type}_{ds_aliases[0] if ds_aliases else 'db'}_001",
+                            placeholder="Ex: T-001 (généré automatiquement si vide)",
                             style={"width": "100%"},
                             persistence=True,
                             persistence_type="session",
                             autoComplete="off"
                         ),
-                        html.Small("Laissez vide pour générer automatiquement", className="text-muted")
+                        html.Small("Laissez vide pour auto-générer T-XXX", className="text-muted")
                     ], md=6),
                     dbc.Col([
                         html.Label("Sévérité"),
@@ -757,7 +773,7 @@ def register_build_callbacks(app):
         refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
 
         obj = {
-            "id": tid or safe_id(f"t_{ttype}_{db or ''}_{col or ''}"),
+            "id": tid or "T-XXX (auto)",
             "type": ttype,
             "severity": (sev or "medium"),
             "sample_on_fail": ("yes" in (sof or []))
@@ -831,7 +847,7 @@ def register_build_callbacks(app):
             pat = first_with_default(pat_list)
             refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
             t = {
-                "id": tid or safe_id(f"t_{ttype}_{db or ''}_{col or ''}"),
+                "id": tid,
                 "type": ttype,
                 "severity": (sev or "medium"),
                 "sample_on_fail": ("yes" in (sof or []))
@@ -852,14 +868,30 @@ def register_build_callbacks(app):
                     t["ref"] = {"database": refdb[3:], "column": refcol or ""}
                 else:
                     t["ref"] = {"database": refdb or "", "column": refcol or ""}
+        
         tests = (tests or [])
-        existing = {x.get("id") for x in tests}
-        base_id = t.get("id") or "t"
-        uid, k = base_id, 2
-        while uid in existing:
-            uid = f"{base_id}_{k}"
-            k += 1
-        t["id"] = uid
+        existing_ids = {x.get("id") for x in tests}
+        
+        # Générer un ID unique au format T-XXX
+        if not t.get("id") or t.get("id") in existing_ids:
+            # Extraire les numéros existants
+            existing_numbers = []
+            for test in tests:
+                test_id = test.get("id", "")
+                if test_id.startswith("T-"):
+                    try:
+                        num = int(test_id.split("-")[1])
+                        existing_numbers.append(num)
+                    except (ValueError, IndexError):
+                        pass
+            
+            # Trouver le prochain numéro disponible
+            next_num = 1
+            while next_num in existing_numbers:
+                next_num += 1
+            
+            t["id"] = f"T-{next_num:03d}"
+        
         tests.append(t)
         items = [
             html.Pre(
@@ -868,7 +900,7 @@ def register_build_callbacks(app):
                 style={"background": "#111", "color": "#eee"}
             ) for x in tests
         ]
-        return f"Test ajouté: {uid}", tests, html.Div(items), "tab-test-viz"
+        return f"Test ajouté: {t['id']}", tests, html.Div(items), "tab-test-viz"
 
     # ===== Publication =====
     
