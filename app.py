@@ -477,11 +477,19 @@ def metric_helper(opts):
               prevent_initial_call=True)
 def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list):
     if not mtype: return ""
-    mid   = (mid_list[0]   if mid_list   else None)
-    mdb   = (mdb_list[0]   if mdb_list   else None)
-    mcol  = (mcol_list[0]  if mcol_list  else None)
-    mwhere= (mwhere_list[0]if mwhere_list else None)
-    mexpr = (mexpr_list[0] if mexpr_list else None)
+    # Helper function to extract first value (handle both list and non-list)
+    def first(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    
+    mid   = first(mid_list)
+    mdb   = first(mdb_list)
+    mcol  = first(mcol_list)
+    mwhere= first(mwhere_list)
+    mexpr = first(mexpr_list)
 
     obj = {"id": (mid or safe_id(f"m_{mtype}_{mdb or ''}_{mcol or ''}")), "type": mtype}
     if mtype in ("row_count","sum","mean"):
@@ -512,7 +520,16 @@ def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mex
 def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list):
     if not n:
         return "", metrics, "", no_update
-    preview_text = (preview_list[0] if preview_list else None)
+    
+    # Helper function to extract first value (handle both list and non-list)
+    def first(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    
+    preview_text = first(preview_list)
     m = None
     if preview_text:
         try:
@@ -520,11 +537,11 @@ def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, m
         except Exception:
             m = None
     if m is None:
-        mid   = (mid_list[0]   if mid_list   else None)
-        mdb   = (mdb_list[0]   if mdb_list   else None)
-        mcol  = (mcol_list[0]  if mcol_list  else None)
-        mwhere= (mwhere_list[0]if mwhere_list else None)
-        mexpr = (mexpr_list[0] if mexpr_list else None)
+        mid   = first(mid_list)
+        mdb   = first(mdb_list)
+        mcol  = first(mcol_list)
+        mwhere= first(mwhere_list)
+        mexpr = first(mexpr_list)
         if not mtype:
             return "Prévisualisation vide/invalide.", metrics, no_update, no_update
         m = {"id": (mid or safe_id(f"m_{mtype}_{mdb or ''}_{mcol or ''}")), "type": mtype}
@@ -640,7 +657,14 @@ def render_test_form(test_type, ds_data, metrics):
     State("store_datasets","data"),
     prevent_initial_call=True)
 def fill_test_columns(db_values, ds_data):
-    db_alias = (db_values[0] if db_values else None)
+    def first(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    
+    db_alias = first(db_values)
     if not db_alias or not ds_data:
         return [], False, ""
     ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
@@ -657,7 +681,14 @@ def fill_test_columns(db_values, ds_data):
               State("store_datasets","data"),
               prevent_initial_call=True)
 def fill_test_ref_columns(db_values, ds_data):
-    db_alias = (db_values[0] if db_values else None)
+    def first(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    
+    db_alias = first(db_values)
     if not db_alias or not ds_data:
         return []
     ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
@@ -684,7 +715,12 @@ def fill_test_ref_columns(db_values, ds_data):
               prevent_initial_call=True)
 def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
     if not ttype: return ""
-    def first(lst, default=None): return lst[0] if lst else default
+    def first(val, default=None):
+        if val is None:
+            return default
+        if isinstance(val, list):
+            return val[0] if val else default
+        return val
     tid, sev, sof = first(tid_list), first(sev_list, "medium"), first(sof_list, [])
     db, col = first(db_list), first(col_list)
     op, thr = first(op_list), first(thr_list)
@@ -733,7 +769,15 @@ def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list
 def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
     if not n:
         return "", tests, "", no_update
-    preview_text = (preview_list[0] if preview_list else None)
+    
+    def first(val, default=None):
+        if val is None:
+            return default
+        if isinstance(val, list):
+            return val[0] if val else default
+        return val
+    
+    preview_text = first(preview_list)
     t = None
     if preview_text:
         try:
@@ -741,7 +785,6 @@ def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_lis
         except Exception:
             t = None
     if t is None:
-        def first(lst, default=None): return lst[0] if lst else default
         if not ttype:
             return "Prévisualisation vide/invalide.", tests, no_update, no_update
         tid, sev, sof = first(tid_list), first(sev_list, "medium"), first(sof_list, [])
