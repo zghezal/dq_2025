@@ -352,7 +352,7 @@ def register_build_callbacks(app):
                 style={"background": "#111", "color": "#eee"}
             ) for x in metrics
         ]
-        return f"Métrique ajoutée: {uid}", metrics, html.Div(items), "tab-metric-list"
+        return f"Métrique ajoutée: {uid}", metrics, html.Div(items), "tab-metric-viz"
 
     # ===== Tests =====
     
@@ -765,7 +765,7 @@ def register_build_callbacks(app):
                 style={"background": "#111", "color": "#eee"}
             ) for x in tests
         ]
-        return f"Test ajouté: {uid}", tests, html.Div(items), "tab-test-list"
+        return f"Test ajouté: {uid}", tests, html.Div(items), "tab-test-viz"
 
     # ===== Publication =====
     
@@ -822,3 +822,135 @@ def register_build_callbacks(app):
             return f"Publié : {fname} → Folder '{folder_id or 'dq_params'}'"
         except Exception as e:
             return f"Erreur de publication : {e}"
+
+    # ===== Tableaux de visualisation =====
+    
+    @app.callback(
+        Output("metrics-table-container", "children"),
+        Input("store_metrics", "data")
+    )
+    def display_metrics_table(metrics):
+        """Affiche le tableau de visualisation des métriques"""
+        from dash import dash_table
+        
+        if not metrics:
+            return dbc.Alert("Aucune métrique définie. Utilisez l'onglet 'Créer' pour en ajouter.", color="info")
+        
+        # Préparer les données pour le tableau
+        table_data = []
+        for m in metrics:
+            row = {
+                "id": m.get("id", "N/A"),
+                "type": m.get("type", "N/A"),
+                "database": m.get("database", "-"),
+                "column": m.get("column", "-"),
+                "where": m.get("where", "-"),
+                "expr": m.get("expr", "-")
+            }
+            table_data.append(row)
+        
+        columns = [
+            {"name": "ID", "id": "id"},
+            {"name": "Type", "id": "type"},
+            {"name": "Base", "id": "database"},
+            {"name": "Colonne", "id": "column"},
+            {"name": "Where", "id": "where"},
+            {"name": "Expression", "id": "expr"}
+        ]
+        
+        table = dash_table.DataTable(
+            data=table_data,
+            columns=columns,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'fontSize': '14px',
+                'whiteSpace': 'normal',
+                'height': 'auto'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': 'rgb(248, 248, 248)'
+                }
+            ],
+            page_size=10
+        )
+        
+        return html.Div([
+            html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
+            table
+        ])
+    
+    @app.callback(
+        Output("tests-table-container", "children"),
+        Input("store_tests", "data")
+    )
+    def display_tests_table(tests):
+        """Affiche le tableau de visualisation des tests"""
+        from dash import dash_table
+        
+        if not tests:
+            return dbc.Alert("Aucun test défini. Utilisez l'onglet 'Créer' pour en ajouter.", color="info")
+        
+        # Préparer les données pour le tableau
+        table_data = []
+        for t in tests:
+            # Extraire le seuil si présent
+            threshold = t.get("threshold", {})
+            threshold_str = f"{threshold.get('op', '')} {threshold.get('value', '')}" if threshold else "-"
+            
+            row = {
+                "id": t.get("id", "N/A"),
+                "type": t.get("type", "N/A"),
+                "database": t.get("database", "-"),
+                "column": t.get("column", "-"),
+                "severity": t.get("severity", "-"),
+                "threshold": threshold_str,
+                "sample_on_fail": "Oui" if t.get("sample_on_fail") else "Non"
+            }
+            table_data.append(row)
+        
+        columns = [
+            {"name": "ID", "id": "id"},
+            {"name": "Type", "id": "type"},
+            {"name": "Base", "id": "database"},
+            {"name": "Colonne", "id": "column"},
+            {"name": "Sévérité", "id": "severity"},
+            {"name": "Seuil", "id": "threshold"},
+            {"name": "Échantillon", "id": "sample_on_fail"}
+        ]
+        
+        table = dash_table.DataTable(
+            data=table_data,
+            columns=columns,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'fontSize': '14px',
+                'whiteSpace': 'normal',
+                'height': 'auto'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': 'rgb(248, 248, 248)'
+                }
+            ],
+            page_size=10
+        )
+        
+        return html.Div([
+            html.H6(f"✅ {len(tests)} test(s) configuré(s)", className="mb-3"),
+            table
+        ])
