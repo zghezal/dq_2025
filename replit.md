@@ -44,6 +44,26 @@ The DQ Builder app helps users:
 
 ## Recent Changes
 
+### Enhanced Metric/Test Management (Oct 14, 2025)
+**CRUD Operations & Visual Improvements**: Added full management capabilities for metrics and tests
+- **Metric Actions**:
+  - ✏️ **Edit button**: Load metric into form for modification
+  - 🗑️ **Delete button**: Remove metric with cascade deletion of associated tests
+  - 🖨️ **Print button**: Mark metric for printing (visible for compatible types)
+  - Cascade deletion logic: Automatically removes foreign_key tests that reference deleted metrics
+- **Form Enhancements**:
+  - **Visual grouping with Cards**: Parameters organized into logical sections
+    - Metrics: Identification, Configuration Dataset, Filtres/Options, Prévisualisation
+    - Tests: Identification, Application du test, Paramètres, Seuils/Tolérance, Référence (FK)
+  - **Default values**: Sensible defaults for all fields (severity=medium, threshold=0.005, first dataset selected)
+  - **Helpful placeholders**: Contextual examples in all input fields
+  - **Inline help text**: Small descriptions under complex fields
+- **Benefits**: 
+  - Complete metric/test lifecycle management
+  - Improved form usability with clear organization
+  - Safer operations with cascade deletion
+  - Better user guidance with defaults and examples
+
 ### Build Page UI Redesign (Oct 14, 2025)
 **Tabbed Interface**: Transformed vertical step-by-step wizard into modern tabbed interface
 - **Purpose**: Improved UX with better organization and visibility of all configuration options
