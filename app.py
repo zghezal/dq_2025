@@ -24,11 +24,36 @@ STREAMS = {
     ]
 }
 
+# Mapping des datasets par contexte (stream, projet, dq_point)
+DATASET_MAPPING = {
+    ("Résultats globaux des ventes", "Récolte des résultats par sites", "Extraction"): ["ventes_par_site", "produits_vendus"],
+    ("Résultats globaux des ventes", "Récolte des résultats par sites", "Transformation"): ["ventes_par_site", "produits_vendus"],
+    ("Résultats globaux des ventes", "Récolte des résultats par sites", "Chargement"): ["resultats_consolides"],
+    ("Résultats globaux des ventes", "Unification des Résultats", "Extraction"): ["resultats_consolides"],
+    ("Résultats globaux des ventes", "Unification des Résultats", "Transformation"): ["resultats_consolides"],
+    ("Résultats globaux des ventes", "Unification des Résultats", "Chargement"): ["resultats_consolides"],
+    ("Qualité des données RH", "Contrôles contrats", "Extraction"): ["contrats_employes"],
+    ("Qualité des données RH", "Contrôles contrats", "Transformation"): ["contrats_employes"],
+    ("Qualité des données RH", "Contrôles contrats", "Chargement"): ["contrats_employes"],
+    ("Qualité des données RH", "Gestion des absences", "Extraction"): ["absences_employes", "contrats_employes"],
+    ("Qualité des données RH", "Gestion des absences", "Transformation"): ["absences_employes"],
+    ("Qualité des données RH", "Gestion des absences", "Chargement"): ["absences_employes"],
+}
+
 client = dataiku.api_client()
 project = client.get_default_project()
 
-def list_project_datasets():
+def list_project_datasets(stream=None, projet=None, dq_point=None):
+    """Liste les datasets filtrés par contexte (stream, projet, dq_point)"""
     try:
+        # Si contexte fourni, utiliser le mapping
+        if stream and projet and dq_point:
+            key = (stream, projet, dq_point)
+            mapped_datasets = DATASET_MAPPING.get(key, [])
+            if mapped_datasets:
+                return mapped_datasets
+        
+        # Sinon, retourner tous les datasets disponibles
         return [d["name"] for d in project.list_datasets()]
     except Exception:
         return []
@@ -125,7 +150,7 @@ def build_page():
         dbc.Card([dbc.CardHeader("Étape 1 — Datasets & Aliases"), dbc.CardBody([
             html.Label("Datasets (depuis ./datasets/*.csv)"),
             dcc.Dropdown(id="ds-picker",
-                         options=[{"label": n, "value": n} for n in list_project_datasets()],
+                         options=[],
                          multi=True, placeholder="Sélectionne des datasets", persistence=True, persistence_type="session"),
             html.Div(id="alias-mapper", className="mt-3"),
             dbc.Button("Enregistrer les datasets", id="save-datasets", color="primary", className="mt-2"),
@@ -283,6 +308,17 @@ def update_ctx_banner(search):
     if not q.get("stream") or not q.get("project"):
         return dbc.Alert("Contexte non défini (utilise l’accueil pour choisir un Stream et un Projet).", color="warning", className="mb-3")
     return dbc.Alert(f"Contexte: Stream = {q['stream']} • Projet = {q['project']}", color="info", className="mb-3")
+
+@app.callback(Output("ds-picker","options"), Input("build-url","search"))
+def update_dataset_options(search):
+    """Met à jour les datasets disponibles selon le contexte"""
+    q = parse_query(search or "")
+    stream = q.get("stream")
+    projet = q.get("project") 
+    dq_point = q.get("dq_point")
+    
+    datasets = list_project_datasets(stream, projet, dq_point)
+    return [{"label": ds, "value": ds} for ds in datasets]
 
 @app.callback(Output("manage-banner","children"), Input("manage-url","search"))
 def update_manage_banner(search):
