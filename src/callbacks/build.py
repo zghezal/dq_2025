@@ -122,7 +122,7 @@ def register_build_callbacks(app):
         State("store_datasets", "data")
     )
     def render_metric_form(metric_type, ds_data):
-        """Affiche le formulaire de création de métrique selon le type"""
+        """Affiche le formulaire de création de métrique selon le type avec groupes visuels"""
         if not metric_type:
             return dbc.Alert("Choisis un type de métrique.", color="light")
         ds_aliases = [d["alias"] for d in (ds_data or [])]
@@ -132,94 +132,128 @@ def register_build_callbacks(app):
                 color="warning"
             )
 
-        common_top = dbc.Row([
-            dbc.Col([
-                html.Label("ID de la métrique"),
-                dcc.Input(
-                    id={"role": "metric-id"},
-                    type="text",
-                    value="",
-                    style={"width": "100%"},
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6),
-            dbc.Col([
-                html.Label("Base (alias)"),
-                dcc.Dropdown(
-                    id={"role": "metric-db"},
-                    options=[{"label": a, "value": a} for a in ds_aliases],
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6),
-        ])
+        # Groupe 1: Identification
+        id_card = dbc.Card([
+            dbc.CardHeader("📝 Identification"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("ID de la métrique"),
+                        dcc.Input(
+                            id={"role": "metric-id"},
+                            type="text",
+                            value="",
+                            placeholder=f"Ex: m_{metric_type}_{ds_aliases[0] if ds_aliases else 'db'}_001",
+                            style={"width": "100%"},
+                            persistence=True,
+                            persistence_type="session"
+                        ),
+                        html.Small("Laissez vide pour générer automatiquement", className="text-muted")
+                    ], md=12)
+                ])
+            ])
+        ], className="mb-3")
 
+        # Groupe 2: Configuration Dataset
         column_visible = metric_type in ("sum", "mean", "distinct_count")
-        column_ctrl = dbc.Row([dbc.Col([
-            html.Label("Colonne", style={"display": "block" if column_visible else "none"}),
-            dcc.Dropdown(
-                id={"role": "metric-column"},
-                options=[],
-                placeholder="Choisir une colonne",
-                clearable=False,
-                persistence=True,
-                persistence_type="session",
-                style={"display": "block" if column_visible else "none"}
-            )
-        ], md=6)])
+        dataset_card = dbc.Card([
+            dbc.CardHeader("🗄️ Configuration Dataset"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Base de données (alias)"),
+                        dcc.Dropdown(
+                            id={"role": "metric-db"},
+                            options=[{"label": a, "value": a} for a in ds_aliases],
+                            value=ds_aliases[0] if ds_aliases else None,
+                            clearable=False,
+                            persistence=True,
+                            persistence_type="session"
+                        )
+                    ], md=6),
+                    dbc.Col([
+                        html.Label("Colonne", style={"display": "block" if column_visible else "none"}),
+                        dcc.Dropdown(
+                            id={"role": "metric-column"},
+                            options=[],
+                            placeholder="Choisir une colonne",
+                            clearable=False,
+                            persistence=True,
+                            persistence_type="session",
+                            style={"display": "block" if column_visible else "none"}
+                        ),
+                        html.Div(id="metric-helper", className="text-muted small", 
+                                style={"display": "block" if column_visible else "none"})
+                    ], md=6)
+                ])
+            ])
+        ], className="mb-3")
 
-        extras = html.Div()
+        # Groupe 3: Filtres et Options
+        extras_content = []
         if metric_type == "row_count":
-            extras = dbc.Row([dbc.Col([
+            extras_content = [
                 html.Label("Filtre WHERE (optionnel)"),
                 dcc.Input(
                     id={"role": "metric-where"},
                     type="text",
                     value="",
+                    placeholder="Ex: column_name > 100",
                     style={"width": "100%"},
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                )
-            ], md=12)])
+                ),
+                html.Small("Spécifiez une condition SQL pour filtrer les lignes", className="text-muted")
+            ]
         elif metric_type in ("sum", "mean"):
-            extras = dbc.Row([dbc.Col([
+            extras_content = [
                 html.Label("Filtre WHERE (optionnel)"),
                 dcc.Input(
                     id={"role": "metric-where"},
                     type="text",
                     value="",
+                    placeholder="Ex: status = 'active'",
                     style={"width": "100%"},
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                )
-            ], md=12)])
+                ),
+                html.Small("Spécifiez une condition SQL pour filtrer les lignes", className="text-muted")
+            ]
         elif metric_type == "ratio":
-            extras = dbc.Row([dbc.Col([
-                html.Label("Expr (metricA / metricB) — IDs de métriques déjà définies"),
+            extras_content = [
+                html.Label("Expression (metricA / metricB)"),
                 dcc.Input(
                     id={"role": "metric-expr"},
                     type="text",
                     value="",
+                    placeholder="Ex: metric_sum_total / metric_count_total",
                     style={"width": "100%"},
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                )
-            ], md=12)])
+                ),
+                html.Small("Utilisez les IDs de métriques déjà définies", className="text-muted")
+            ]
+        
+        options_card = dbc.Card([
+            dbc.CardHeader("⚙️ Filtres et Options"),
+            dbc.CardBody(extras_content if extras_content else [html.P("Aucune option pour ce type de métrique", className="text-muted")])
+        ], className="mb-3") if metric_type != "distinct_count" else html.Div()
 
-        helper = html.Div(id="metric-helper", className="text-muted small mt-2")
-        preview = html.Div([
-            html.H6("Prévisualisation"),
-            html.Pre(
-                id={"role": "metric-preview"},
-                style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
-            )
+        # Prévisualisation
+        preview = dbc.Card([
+            dbc.CardHeader("👁️ Prévisualisation"),
+            dbc.CardBody([
+                html.Pre(
+                    id={"role": "metric-preview"},
+                    style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
+                )
+            ])
         ])
-        return html.Div([common_top, html.Br(), column_ctrl, helper, html.Br(), extras, html.Hr(), preview])
+        
+        return html.Div([id_card, dataset_card, options_card, preview])
 
     @app.callback(
         Output({"role": "metric-column"}, "options"),
@@ -363,142 +397,188 @@ def register_build_callbacks(app):
         State("store_metrics", "data")
     )
     def render_test_form(test_type, ds_data, metrics):
-        """Affiche le formulaire de création de test selon le type"""
+        """Affiche le formulaire de création de test selon le type avec groupes visuels"""
         if not test_type:
             return dbc.Alert("Choisis un type de test.", color="light")
         ds_aliases = [d["alias"] for d in (ds_data or [])]
         if not ds_aliases:
             return dbc.Alert("Enregistre d'abord des datasets.", color="warning")
 
-        common = dbc.Row([
-            dbc.Col([
-                html.Label("ID du test"),
-                dcc.Input(
-                    id={"role": "test-id"},
-                    type="text",
-                    value="",
-                    style={"width": "100%"},
-                    persistence=True,
-                    persistence_type="session",
-                    autoComplete="off"
-                )
-            ], md=6),
-            dbc.Col([
-                html.Label("Sévérité"),
-                dcc.Dropdown(
-                    id={"role": "test-sev"},
-                    options=[{"label": x, "value": x} for x in ["low", "medium", "high"]],
-                    value="medium",
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=3),
-            dbc.Col([
-                html.Label("Échantillon si échec"),
-                dcc.Checklist(
-                    id={"role": "test-sof"},
-                    options=[{"label": " Oui", "value": "yes"}],
-                    value=["yes"],
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=3),
-        ])
-
-        if test_type in ("null_rate", "uniqueness", "range", "regex"):
-            db_ctrl = dbc.Row([dbc.Col([
-                html.Label("Base (alias)"),
-                dcc.Dropdown(
-                    id={"role": "test-db"},
-                    options=[{"label": a, "value": a} for a in ds_aliases],
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            col_ctrl = dbc.Row([dbc.Col([
-                html.Label("Colonne"),
-                dcc.Dropdown(
-                    id={"role": "test-col"},
-                    options=[],
-                    placeholder="Choisir une colonne",
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            extra = html.Div()
-            if test_type == "range":
-                extra = dbc.Row([
+        # Groupe 1: Identification
+        id_card = dbc.Card([
+            dbc.CardHeader("📝 Identification"),
+            dbc.CardBody([
+                dbc.Row([
                     dbc.Col([
-                        html.Label("Min"),
+                        html.Label("ID du test"),
                         dcc.Input(
-                            id={"role": "test-min"},
+                            id={"role": "test-id"},
                             type="text",
-                            value="0",
+                            value="",
+                            placeholder=f"Ex: t_{test_type}_{ds_aliases[0] if ds_aliases else 'db'}_001",
+                            style={"width": "100%"},
                             persistence=True,
                             persistence_type="session",
                             autoComplete="off"
+                        ),
+                        html.Small("Laissez vide pour générer automatiquement", className="text-muted")
+                    ], md=6),
+                    dbc.Col([
+                        html.Label("Sévérité"),
+                        dcc.Dropdown(
+                            id={"role": "test-sev"},
+                            options=[{"label": x, "value": x} for x in ["low", "medium", "high"]],
+                            value="medium",
+                            clearable=False,
+                            persistence=True,
+                            persistence_type="session"
                         )
                     ], md=3),
                     dbc.Col([
-                        html.Label("Max"),
-                        dcc.Input(
-                            id={"role": "test-max"},
-                            type="text",
-                            value="100",
+                        html.Label("Échantillon si échec"),
+                        dcc.Checklist(
+                            id={"role": "test-sof"},
+                            options=[{"label": " Oui", "value": "yes"}],
+                            value=["yes"],
                             persistence=True,
-                            persistence_type="session",
-                            autoComplete="off"
+                            persistence_type="session"
                         )
                     ], md=3),
                 ])
-            if test_type == "regex":
-                extra = dbc.Row([dbc.Col([
-                    html.Label("Pattern (regex)"),
-                    dcc.Input(
-                        id={"role": "test-pattern"},
-                        type="text",
-                        value=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
-                        style={"width": "100%"},
-                        persistence=True,
-                        persistence_type="session",
-                        autoComplete="off"
-                    )
-                ], md=12)])
-            thresh = dbc.Row([
-                dbc.Col([
-                    html.Label("Opérateur"),
-                    dcc.Dropdown(
-                        id={"role": "test-op"},
-                        options=[{"label": x, "value": x} for x in ["<=", "<", ">=", ">", "=", "!="]],
-                        value="<=",
-                        clearable=False,
-                        persistence=True,
-                        persistence_type="session"
-                    )
-                ], md=3),
-                dbc.Col([
-                    html.Label("Valeur"),
-                    dcc.Input(
-                        id={"role": "test-thr"},
-                        type="text",
-                        value="0.005",
-                        persistence=True,
-                        persistence_type="session",
-                        autoComplete="off"
-                    )
-                ], md=3),
             ])
-            preview = html.Div([
-                html.H6("Prévisualisation du test"),
-                html.Pre(
-                    id={"role": "test-preview"},
-                    style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
-                )
+        ], className="mb-3")
+
+        if test_type in ("null_rate", "uniqueness", "range", "regex"):
+            # Groupe 2: Application du test
+            target_card = dbc.Card([
+                dbc.CardHeader("🎯 Application du test"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Base de données (alias)"),
+                            dcc.Dropdown(
+                                id={"role": "test-db"},
+                                options=[{"label": a, "value": a} for a in ds_aliases],
+                                value=ds_aliases[0] if ds_aliases else None,
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Colonne"),
+                            dcc.Dropdown(
+                                id={"role": "test-col"},
+                                options=[],
+                                placeholder="Choisir une colonne",
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6)
+                    ])
+                ])
+            ], className="mb-3")
+            
+            # Groupe 3: Paramètres spécifiques
+            params_content = []
+            if test_type == "range":
+                params_content = [
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Valeur Min"),
+                            dcc.Input(
+                                id={"role": "test-min"},
+                                type="text",
+                                value="0",
+                                placeholder="Ex: 0",
+                                persistence=True,
+                                persistence_type="session",
+                                autoComplete="off"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Valeur Max"),
+                            dcc.Input(
+                                id={"role": "test-max"},
+                                type="text",
+                                value="100",
+                                placeholder="Ex: 100",
+                                persistence=True,
+                                persistence_type="session",
+                                autoComplete="off"
+                            )
+                        ], md=6),
+                    ])
+                ]
+            elif test_type == "regex":
+                params_content = [
+                    dbc.Row([dbc.Col([
+                        html.Label("Pattern (expression régulière)"),
+                        dcc.Input(
+                            id={"role": "test-pattern"},
+                            type="text",
+                            value=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                            placeholder="Ex: ^[A-Z]{3}[0-9]{3}$",
+                            style={"width": "100%"},
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        ),
+                        html.Small("Valeur par défaut: regex email", className="text-muted")
+                    ], md=12)])
+                ]
+            
+            params_card = dbc.Card([
+                dbc.CardHeader("⚙️ Paramètres du test"),
+                dbc.CardBody(params_content if params_content else [html.P("Aucun paramètre spécifique pour ce type", className="text-muted")])
+            ], className="mb-3") if params_content else html.Div()
+            
+            # Groupe 4: Seuils et tolérance
+            threshold_card = dbc.Card([
+                dbc.CardHeader("📊 Seuils et tolérance"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Opérateur"),
+                            dcc.Dropdown(
+                                id={"role": "test-op"},
+                                options=[{"label": x, "value": x} for x in ["<=", "<", ">=", ">", "=", "!="]],
+                                value="<=",
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Valeur seuil"),
+                            dcc.Input(
+                                id={"role": "test-thr"},
+                                type="text",
+                                value="0.005",
+                                placeholder="Ex: 0.01 (1%)",
+                                persistence=True,
+                                persistence_type="session",
+                                autoComplete="off"
+                            ),
+                            html.Small("Ex: 0.005 = 0.5%", className="text-muted")
+                        ], md=6),
+                    ])
+                ])
+            ], className="mb-3")
+            
+            # Prévisualisation
+            preview = dbc.Card([
+                dbc.CardHeader("👁️ Prévisualisation"),
+                dbc.CardBody([
+                    html.Pre(
+                        id={"role": "test-preview"},
+                        style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
+                    )
+                ])
             ])
-            return html.Div([common, html.Br(), db_ctrl, col_ctrl, html.Br(), extra, html.Br(), thresh, html.Hr(), preview])
+            
+            return html.Div([id_card, target_card, params_card, threshold_card, preview])
 
         if test_type == "foreign_key":
             metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
@@ -507,59 +587,82 @@ def register_build_callbacks(app):
                 [{"label": f"🗄️ {a}", "value": f"db:{a}"} for a in ds_aliases]
             )
             
-            db1 = dbc.Row([dbc.Col([
-                html.Label("Base (alias)"),
-                dcc.Dropdown(
-                    id={"role": "test-db"},
-                    options=[{"label": a, "value": a} for a in ds_aliases],
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            col1 = dbc.Row([dbc.Col([
-                html.Label("Colonne"),
-                dcc.Dropdown(
-                    id={"role": "test-col"},
-                    options=[],
-                    placeholder="Choisir une colonne",
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            db2 = dbc.Row([dbc.Col([
-                html.Label("Ref Base (alias) ou Métrique"),
-                html.Div("Sélectionne une base de données 🗄️ ou une métrique 📊", className="text-muted small mb-1"),
-                dcc.Dropdown(
-                    id={"role": "test-ref-db"},
-                    options=ref_options,
-                    placeholder="Base ou métrique...",
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            col2 = dbc.Row([dbc.Col([
-                html.Label("Ref Colonne"),
-                html.Div(id="fk-ref-col-helper", className="text-muted small mb-1"),
-                dcc.Dropdown(
-                    id={"role": "test-ref-col"},
-                    options=[],
-                    placeholder="Choisir une colonne",
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session"
-                )
-            ], md=6)])
-            preview = html.Div([
-                html.H6("Prévisualisation du test"),
-                html.Pre(
-                    id={"role": "test-preview"},
-                    style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
-                )
+            # Groupe 2: Colonne source
+            source_card = dbc.Card([
+                dbc.CardHeader("🎯 Colonne source"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Base de données (alias)"),
+                            dcc.Dropdown(
+                                id={"role": "test-db"},
+                                options=[{"label": a, "value": a} for a in ds_aliases],
+                                value=ds_aliases[0] if ds_aliases else None,
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Colonne"),
+                            dcc.Dropdown(
+                                id={"role": "test-col"},
+                                options=[],
+                                placeholder="Choisir une colonne",
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6)
+                    ])
+                ])
+            ], className="mb-3")
+            
+            # Groupe 3: Référence
+            ref_card = dbc.Card([
+                dbc.CardHeader("🔗 Référence (Foreign Key)"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Référence (Base ou Métrique)"),
+                            html.Div("Sélectionne une base de données 🗄️ ou une métrique 📊", className="text-muted small mb-1"),
+                            dcc.Dropdown(
+                                id={"role": "test-ref-db"},
+                                options=ref_options,
+                                placeholder="Base ou métrique...",
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Colonne de référence"),
+                            html.Div(id="fk-ref-col-helper", className="text-muted small mb-1"),
+                            dcc.Dropdown(
+                                id={"role": "test-ref-col"},
+                                options=[],
+                                placeholder="Choisir une colonne",
+                                clearable=False,
+                                persistence=True,
+                                persistence_type="session"
+                            )
+                        ], md=6)
+                    ])
+                ])
+            ], className="mb-3")
+            
+            # Prévisualisation
+            preview = dbc.Card([
+                dbc.CardHeader("👁️ Prévisualisation"),
+                dbc.CardBody([
+                    html.Pre(
+                        id={"role": "test-preview"},
+                        style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
+                    )
+                ])
             ])
-            return html.Div([common, html.Br(), db1, col1, db2, col2, html.Hr(), preview])
+            
+            return html.Div([id_card, source_card, ref_card, preview])
 
         return dbc.Alert("Type non géré pour l'instant.", color="warning")
 
