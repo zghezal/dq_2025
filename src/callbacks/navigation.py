@@ -7,6 +7,7 @@ from src.layouts.navbar import navbar
 from src.layouts.home import home_page
 from src.layouts.dq import dq_page
 from src.layouts.build import build_page
+from src.layouts.configs import configs_page
 
 
 def register_navigation_callbacks(app):
@@ -25,6 +26,8 @@ def register_navigation_callbacks(app):
             parts.append("DQ Management")
         elif pathname == "/build":
             parts.append("Build")
+        elif pathname == "/configs":
+            parts.append("Configurations")
         return " / ".join(parts) if parts else ""
 
     @app.callback(
@@ -42,6 +45,8 @@ def register_navigation_callbacks(app):
             return build_page()
         if clean_path == "/dq":
             return dq_page()
+        if clean_path == "/configs":
+            return configs_page()
         return dbc.Container([
             dbc.Alert("🛠️ Bientôt disponible. Revenez à la Construction pour l'instant.", color="info")
         ], fluid=True)

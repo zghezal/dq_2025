@@ -9,7 +9,12 @@ def navbar():
     return dbc.Navbar(
         dbc.Container([
             html.A(dbc.NavbarBrand("DQ App", className="ms-2"), href="/", className="navbar-brand"),
-            html.Div(id="crumb", className="ms-auto small text-muted")
+            dbc.Nav([
+                dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
+                dbc.NavItem(dbc.NavLink("DQ Management", href="/dq", active="exact")),
+                dbc.NavItem(dbc.NavLink("Configurations", href="/configs", active="exact"))
+            ], className="ms-auto", navbar=True),
+            html.Div(id="crumb", className="ms-4 small text-muted")
         ]),
         color="light", dark=False, className="mb-4"
     )
