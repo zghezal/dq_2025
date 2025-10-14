@@ -266,11 +266,14 @@ def update_create_link(stream, project, dq_point):
 
 @app.callback(Output("page-content","children"), Input("url","pathname"))
 def display_page(pathname):
-    if pathname in ("/","",None):
+    # URL-decode and strip query parameters if they're encoded in the pathname
+    decoded_path = urlparse.unquote(pathname) if pathname else pathname
+    clean_path = decoded_path.split('?')[0] if decoded_path else decoded_path
+    if clean_path in ("/","",None):
         return home_page()
-    if pathname == "/build":
+    if clean_path == "/build":
         return build_page()
-    if pathname == "/dq":
+    if clean_path == "/dq":
         return dq_page()
     return dbc.Container([dbc.Alert("🛠️ Bientôt disponible. Revenez à la Construction pour l’instant.", color="info")], fluid=True)
 
