@@ -637,16 +637,23 @@ def render_test_form(test_type, ds_data, metrics):
         return html.Div([common, html.Br(), db_ctrl, col_ctrl, html.Br(), extra, html.Br(), thresh, html.Hr(), preview])
 
     if test_type == "foreign_key":
+        metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
+        ref_options = ([{"label": f"📊 {mid}", "value": f"metric:{mid}"} for mid in metric_ids] +
+                       [{"label": f"🗄️ {a}", "value": f"db:{a}"} for a in ds_aliases])
+        
         db1 = dbc.Row([dbc.Col([html.Label("Base (alias)"),
                                 dcc.Dropdown(id={"role":"test-db"}, options=[{"label":a,"value":a} for a in ds_aliases],
                                              clearable=False, persistence=True, persistence_type="session")], md=6)])
         col1 = dbc.Row([dbc.Col([html.Label("Colonne"),
                                  dcc.Dropdown(id={"role":"test-col"}, options=[], placeholder="Choisir une colonne",
                                               clearable=False, persistence=True, persistence_type="session")], md=6)])
-        db2 = dbc.Row([dbc.Col([html.Label("Ref Base (alias)"),
-                                dcc.Dropdown(id={"role":"test-ref-db"}, options=[{"label":a,"value":a} for a in ds_aliases],
+        db2 = dbc.Row([dbc.Col([html.Label("Ref Base (alias) ou Métrique"),
+                                html.Div("Sélectionne une base de données 🗄️ ou une métrique 📊", className="text-muted small mb-1"),
+                                dcc.Dropdown(id={"role":"test-ref-db"}, options=ref_options,
+                                             placeholder="Base ou métrique...",
                                              clearable=False, persistence=True, persistence_type="session")], md=6)])
         col2 = dbc.Row([dbc.Col([html.Label("Ref Colonne"),
+                                 html.Div(id="fk-ref-col-helper", className="text-muted small mb-1"),
                                  dcc.Dropdown(id={"role":"test-ref-col"}, options=[], placeholder="Choisir une colonne",
                                               clearable=False, persistence=True, persistence_type="session")], md=6)])
         preview = html.Div([html.H6("Prévisualisation du test"),
@@ -682,11 +689,14 @@ def fill_test_columns(db_values, ds_data):
     opts = [{"label":c,"value":c} for c in cols]
     return opts, False, ""
 
-@app.callback(Output({"role":"test-ref-col"},"options"),
-              Input({"role":"test-ref-db"},"value", ALL),
-              State("store_datasets","data"),
-              prevent_initial_call=True)
-def fill_test_ref_columns(db_values, ds_data):
+@app.callback(
+    Output({"role":"test-ref-col"},"options"),
+    Output({"role":"test-ref-col"},"disabled"),
+    Output("fk-ref-col-helper","children"),
+    Input({"role":"test-ref-db"},"value", ALL),
+    State("store_datasets","data"),
+    prevent_initial_call=True)
+def fill_test_ref_columns(ref_values, ds_data):
     def first(val):
         if val is None:
             return None
@@ -694,15 +704,27 @@ def fill_test_ref_columns(db_values, ds_data):
             return val[0] if val else None
         return val
     
-    db_alias = first(db_values)
-    if not db_alias or not ds_data:
-        return []
-    ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
-    if not ds_name:
-        return []
-    cols = get_columns_for_dataset(ds_name)
-    opts = [{"label":c,"value":c} for c in cols]
-    return opts
+    ref_value = first(ref_values)
+    if not ref_value:
+        return [], True, ""
+    
+    if ref_value.startswith("metric:"):
+        return [], True, "Les métriques n'ont pas de colonnes (valeur unique)"
+    
+    if ref_value.startswith("db:"):
+        db_alias = ref_value[3:]
+        if not ds_data:
+            return [], True, ""
+        ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
+        if not ds_name:
+            return [], True, f"Dataset introuvable pour l'alias « {db_alias} »"
+        cols = get_columns_for_dataset(ds_name)
+        if not cols:
+            return [], True, f"Aucune colonne pour « {ds_name} »"
+        opts = [{"label":c,"value":c} for c in cols]
+        return opts, False, f"{len(opts)} colonne(s) disponibles"
+    
+    return [], True, ""
 
 @app.callback(Output({"role":"test-preview"},"children"),
               Input("test-type","value"),
@@ -746,8 +768,13 @@ def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list
         if op and thr is not None:
             obj["threshold"] = {"op": op, "value": thr}
     elif ttype == "foreign_key":
-        obj.update({"database": db or "", "column": col or "",
-                    "ref": {"database": refdb or "", "column": refcol or ""}})
+        obj.update({"database": db or "", "column": col or ""})
+        if refdb and refdb.startswith("metric:"):
+            obj["ref"] = {"metric": refdb[7:]}
+        elif refdb and refdb.startswith("db:"):
+            obj["ref"] = {"database": refdb[3:], "column": refcol or ""}
+        else:
+            obj["ref"] = {"database": refdb or "", "column": refcol or ""}
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 @app.callback(
@@ -811,8 +838,13 @@ def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_lis
             if op and thr is not None:
                 t["threshold"] = {"op": op, "value": thr}
         elif ttype == "foreign_key":
-            t.update({"database": db or "", "column": col or "",
-                      "ref": {"database": refdb or "", "column": refcol or ""}})
+            t.update({"database": db or "", "column": col or ""})
+            if refdb and refdb.startswith("metric:"):
+                t["ref"] = {"metric": refdb[7:]}
+            elif refdb and refdb.startswith("db:"):
+                t["ref"] = {"database": refdb[3:], "column": refcol or ""}
+            else:
+                t["ref"] = {"database": refdb or "", "column": refcol or ""}
     tests = (tests or [])
     existing = {x.get("id") for x in tests}
     base_id = t.get("id") or "t"
