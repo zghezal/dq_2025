@@ -64,6 +64,14 @@ def get_columns_for_dataset(ds_name):
         schema = ds.read_schema() or []
         return [c.get("name") for c in schema if c.get("name")]
     except Exception:
+        import csv
+        import os
+        csv_path = f"./datasets/{ds_name}.csv"
+        if os.path.exists(csv_path):
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                headers = next(reader, [])
+                return headers
         return []
 
 def safe_id(s):
