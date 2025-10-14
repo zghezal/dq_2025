@@ -64,6 +64,19 @@ The DQ Builder app helps users:
    - **Auto-switch**: After adding a metric/test, automatically switches to the "définies" tab to show the result
    - **Benefit**: More compact interface, reduces visual clutter once items are configured
 
+7. **Pattern matching ALL bug** (Oct 14, 2025): Fixed callbacks capturing only first character instead of full values
+   - **Root cause**: Dash pattern matching with `ALL` returns a string directly (not a list) when only one component matches
+   - **Issue**: Using `value[0]` on string "001" returned first character "0" instead of full value "001"
+   - **Solution**: Created helper function `first()` that checks if input is string or list before extraction
+   - **Callbacks fixed**: preview_metric, add_metric, preview_test, add_test, fill_test_columns, fill_test_ref_columns, fill_metric_columns (7 callbacks total)
+   - **Result**: All input values now captured correctly regardless of how many matching components exist
+
+8. **Missing component error** (Oct 14, 2025): Fixed "nonexistent object" error for metric-column component
+   - **Root cause**: Component `{"role":"metric-column"}` only rendered for certain metric types (sum, mean, distinct_count)
+   - **Issue**: Callbacks tried to update this component even when it didn't exist for row_count or ratio types
+   - **Solution**: Component now always rendered but hidden with `display: none` when not needed
+   - **Result**: No more callback errors, component always exists in DOM for callbacks to target
+
 ### Setup Changes
 - Created `run.py` to properly run the app on 0.0.0.0:5000
 - Added `.gitignore` for Python project
