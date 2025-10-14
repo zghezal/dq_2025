@@ -408,12 +408,11 @@ def render_metric_form(metric_type, ds_data):
                               clearable=False, persistence=True, persistence_type="session")], md=6),
     ])
 
-    if metric_type in ("sum","mean","distinct_count"):
-        column_ctrl = dbc.Row([dbc.Col([html.Label("Colonne"),
-                               dcc.Dropdown(id={"role":"metric-column"}, options=[], placeholder="Choisir une colonne",
-                                            clearable=False, persistence=True, persistence_type="session")], md=6)])
-    else:
-        column_ctrl = html.Div()
+    column_visible = metric_type in ("sum","mean","distinct_count")
+    column_ctrl = dbc.Row([dbc.Col([html.Label("Colonne", style={"display": "block" if column_visible else "none"}),
+                           dcc.Dropdown(id={"role":"metric-column"}, options=[], placeholder="Choisir une colonne",
+                                        clearable=False, persistence=True, persistence_type="session",
+                                        style={"display": "block" if column_visible else "none"})], md=6)])
 
     extras = html.Div()
     if metric_type == "row_count":
@@ -445,7 +444,14 @@ def render_metric_form(metric_type, ds_data):
     State("store_datasets","data"),
     prevent_initial_call=True)
 def fill_metric_columns(db_values, ds_data):
-    db_alias = (db_values[0] if db_values else None)
+    def first(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    
+    db_alias = first(db_values)
     if not db_alias or not ds_data:
         return [], False, ""
     ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
