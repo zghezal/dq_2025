@@ -1133,11 +1133,6 @@ def register_build_callbacks(app):
     
     @app.callback(
         [Output("metric-type", "value", allow_duplicate=True),
-         Output({"role": "metric-id"}, "value", allow_duplicate=True),
-         Output({"role": "metric-db"}, "value", allow_duplicate=True),
-         Output({"role": "metric-column"}, "value", allow_duplicate=True),
-         Output({"role": "metric-where"}, "value", allow_duplicate=True),
-         Output({"role": "metric-expr"}, "value", allow_duplicate=True),
          Output("metric-tabs", "active_tab", allow_duplicate=True),
          Output("metric-action-status", "children", allow_duplicate=True)],
         Input({"type": "edit-metric", "index": ALL}, "n_clicks"),
@@ -1145,9 +1140,9 @@ def register_build_callbacks(app):
         prevent_initial_call=True
     )
     def edit_metric(n_clicks_list, metrics):
-        """Charge une métrique dans le formulaire pour modification"""
+        """Charge la métrique pour modification"""
         if not any(n_clicks_list):
-            return [no_update] * 8
+            return no_update, no_update, no_update
         
         # Trouver quel bouton a été cliqué
         clicked_idx = None
@@ -1157,21 +1152,29 @@ def register_build_callbacks(app):
                 break
         
         if clicked_idx is None or not metrics or clicked_idx >= len(metrics):
-            return [no_update] * 8
+            return no_update, no_update, no_update
         
         # Récupérer la métrique à modifier
         metric = metrics[clicked_idx]
         
+        # Créer un message détaillé avec toutes les valeurs
+        values_text = html.Div([
+            html.P(f"✏️ Pour modifier la métrique '{metric.get('id')}', utilisez les valeurs suivantes :", className="mb-2"),
+            html.Ul([
+                html.Li(f"Type: {metric.get('type', 'N/A')}"),
+                html.Li(f"ID: {metric.get('id', 'N/A')}"),
+                html.Li(f"Database: {metric.get('database', 'N/A')}") if metric.get('database') else None,
+                html.Li(f"Colonne: {metric.get('column', 'N/A')}") if metric.get('column') else None,
+                html.Li(f"Where: {metric.get('where', 'N/A')}") if metric.get('where') else None,
+                html.Li(f"Expression: {metric.get('expr', 'N/A')}") if metric.get('expr') else None,
+            ]),
+            html.P("📝 Saisissez ces valeurs dans le formulaire, puis cliquez sur 'Ajouter' pour mettre à jour.", className="mt-2 text-primary")
+        ])
+        
         return (
-            metric.get("type", ""),
-            metric.get("id", ""),
-            metric.get("database", ""),
-            metric.get("column", ""),
-            metric.get("where", ""),
-            metric.get("expr", ""),
+            metric.get("type", ""),  # Pré-sélectionner le type
             "tab-metric-create",  # Basculer vers l'onglet de création
-            dbc.Alert(f"✏️ Métrique '{metric.get('id')}' chargée pour modification. Modifiez les champs puis cliquez sur 'Ajouter' pour mettre à jour.", 
-                     color="info", dismissable=True)
+            dbc.Alert(values_text, color="info", dismissable=True)
         )
     
     @app.callback(

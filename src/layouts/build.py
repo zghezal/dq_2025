@@ -13,6 +13,7 @@ def build_page():
         dcc.Store(id="store_datasets", storage_type="memory"),
         dcc.Store(id="store_metrics", storage_type="memory"),
         dcc.Store(id="store_tests", storage_type="memory"),
+        dcc.Store(id="store_edit_metric", storage_type="memory"),
 
         dbc.Tabs([
             # Onglet 1: Datasets
