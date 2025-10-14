@@ -250,7 +250,8 @@ def update_dq_list(_n, stream, project, dq_point):
     return html.Div([hint, dbc.ListGroup(items)])
 
 @app.callback(
-    Output("page-content","children", allow_duplicate=True),
+    Output("dq-url","pathname"),
+    Output("dq-url","search"),
     Input("dq-create","n_clicks"),
     State("dq-stream","value"),
     State("dq-project","value"),
@@ -259,14 +260,14 @@ def update_dq_list(_n, stream, project, dq_point):
 )
 def on_create_from_scratch(n, stream, project, dq_point):
     if not n:
-        return no_update
+        return no_update, no_update
     # Route to build page with context
     q = []
     if stream: q.append(f"stream={stream}")
     if project: q.append(f"project={project}")
     if dq_point: q.append(f"dq_point={dq_point}")
-    # display banner with context on build page
-    return build_page()
+    query_string = ("?" + "&".join(q)) if q else ""
+    return "/build", query_string
 
 @app.callback(Output("page-content","children"), Input("url","pathname"))
 def display_page(pathname):
@@ -576,10 +577,9 @@ def render_test_form(test_type, ds_data, metrics):
     Output("toast","is_open", allow_duplicate=True),
     Output("toast","children", allow_duplicate=True),
     Input({"role":"test-db"},"value", ALL),
-    Input("store_datasets","data"),
-    Input("build-url","pathname"),
+    State("store_datasets","data"),
     prevent_initial_call=True)
-def fill_test_columns(db_values, ds_data, _build_path):
+def fill_test_columns(db_values, ds_data):
     db_alias = (db_values[0] if db_values else None)
     if not db_alias or not ds_data:
         return [], False, ""
@@ -594,10 +594,9 @@ def fill_test_columns(db_values, ds_data, _build_path):
 
 @app.callback(Output({"role":"test-ref-col"},"options"),
               Input({"role":"test-ref-db"},"value", ALL),
-              Input("store_datasets","data"),
-              Input("build-url","pathname"),
+              State("store_datasets","data"),
               prevent_initial_call=True)
-def fill_test_ref_columns(db_values, ds_data, _build_path):
+def fill_test_ref_columns(db_values, ds_data):
     db_alias = (db_values[0] if db_values else None)
     if not db_alias or not ds_data:
         return []
