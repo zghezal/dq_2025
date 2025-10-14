@@ -1394,3 +1394,27 @@ def register_build_callbacks(app):
                 "fontSize": "12px"
             })
         ], color="dark", dismissable=True)
+    
+    # ===== Modals de documentation =====
+    
+    @app.callback(
+        Output("metric-help-modal", "is_open"),
+        Input("open-metric-help", "n_clicks"),
+        Input("close-metric-help", "n_clicks"),
+        State("metric-help-modal", "is_open"),
+        prevent_initial_call=True
+    )
+    def toggle_metric_help_modal(open_clicks, close_clicks, is_open):
+        """Ouvre/ferme le modal d'aide pour les métriques"""
+        return not is_open
+    
+    @app.callback(
+        Output("test-help-modal", "is_open"),
+        Input("open-test-help", "n_clicks"),
+        Input("close-test-help", "n_clicks"),
+        State("test-help-modal", "is_open"),
+        prevent_initial_call=True
+    )
+    def toggle_test_help_modal(open_clicks, close_clicks, is_open):
+        """Ouvre/ferme le modal d'aide pour les tests"""
+        return not is_open
