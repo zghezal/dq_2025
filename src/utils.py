@@ -98,3 +98,110 @@ def first(val):
     if isinstance(val, list):
         return val[0] if val else None
     return val
+
+
+def get_dq_folder_path(folder_id="dq_params"):
+    """Retourne le chemin du folder DQ"""
+    try:
+        folder = dataiku.Folder(folder_id)
+        path = getattr(folder, "path", None)
+        return path if path else None
+    except Exception:
+        return None
+
+
+def read_dq_file(filename, folder_id="dq_params"):
+    """Lit le contenu d'un fichier DQ"""
+    import os
+    import json
+    import yaml
+    
+    path = get_dq_folder_path(folder_id)
+    if not path:
+        return None
+    
+    filepath = os.path.join(path, filename)
+    if not os.path.exists(filepath):
+        return None
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            if filename.endswith('.json'):
+                return json.load(f)
+            elif filename.endswith('.yaml') or filename.endswith('.yml'):
+                return yaml.safe_load(f)
+    except Exception:
+        return None
+    return None
+
+
+def write_dq_file(filename, content, folder_id="dq_params"):
+    """Écrit un fichier DQ"""
+    import os
+    import json
+    import yaml
+    
+    path = get_dq_folder_path(folder_id)
+    if not path:
+        return False
+    
+    filepath = os.path.join(path, filename)
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            if filename.endswith('.json'):
+                json.dump(content, f, ensure_ascii=False, indent=2)
+            elif filename.endswith('.yaml') or filename.endswith('.yml'):
+                yaml.dump(content, f, allow_unicode=True, default_flow_style=False)
+        return True
+    except Exception:
+        return False
+
+
+def delete_dq_file(filename, folder_id="dq_params"):
+    """Supprime un fichier DQ"""
+    import os
+    
+    path = get_dq_folder_path(folder_id)
+    if not path:
+        return False
+    
+    filepath = os.path.join(path, filename)
+    if not os.path.exists(filepath):
+        return False
+    
+    try:
+        os.remove(filepath)
+        return True
+    except Exception:
+        return False
+
+
+def rename_dq_file(old_filename, new_filename, folder_id="dq_params"):
+    """Renomme un fichier DQ"""
+    import os
+    
+    path = get_dq_folder_path(folder_id)
+    if not path:
+        return False
+    
+    old_path = os.path.join(path, old_filename)
+    new_path = os.path.join(path, new_filename)
+    
+    if not os.path.exists(old_path):
+        return False
+    if os.path.exists(new_path):
+        return False
+    
+    try:
+        os.rename(old_path, new_path)
+        return True
+    except Exception:
+        return False
+
+
+def duplicate_dq_file(filename, new_filename, folder_id="dq_params"):
+    """Duplique un fichier DQ"""
+    content = read_dq_file(filename, folder_id)
+    if content is None:
+        return False
+    return write_dq_file(new_filename, content, folder_id)
