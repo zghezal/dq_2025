@@ -52,6 +52,39 @@ def register_build_callbacks(app):
         )
 
     @app.callback(
+        Output("store_datasets", "data", allow_duplicate=True),
+        Output("store_metrics", "data", allow_duplicate=True),
+        Output("store_tests", "data", allow_duplicate=True),
+        Input("url", "href"),
+        prevent_initial_call='initial_duplicate'
+    )
+    def load_config_from_url(href):
+        """Charge une configuration existante si load_config est présent dans l'URL"""
+        from src.utils import read_dq_file
+        
+        decoded_href = urlparse.unquote(href) if href else ""
+        q = {}
+        if decoded_href and '?' in decoded_href:
+            query_string = '?' + decoded_href.split('?', 1)[1]
+            q = parse_query(query_string)
+        
+        # Si load_config est présent, charger la configuration
+        if q.get("load_config"):
+            filename = q["load_config"]
+            config = read_dq_file(filename, "dq_params")
+            
+            if config:
+                # Extraire les données pour chaque store
+                datasets = config.get("databases", [])
+                metrics = config.get("metrics", [])
+                tests = config.get("tests", [])
+                
+                return datasets, metrics, tests
+        
+        # Sinon, ne pas mettre à jour (no_update)
+        return no_update, no_update, no_update
+
+    @app.callback(
         Output("ds-picker", "options"), 
         Input("url", "href")
     )
