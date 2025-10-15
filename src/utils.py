@@ -75,8 +75,8 @@ def parse_query(search: str):
     return {k: (v[0] if isinstance(v, list) and v else v) for k, v in q.items()}
 
 
-def list_dq_files(folder_id="dq_params"):
-    """Liste les fichiers DQ dans un folder Dataiku"""
+def list_dq_files(folder_id="dq_params", stream=None, project=None, dq_point=None):
+    """Liste les fichiers DQ dans un folder Dataiku filtrés par contexte"""
     try:
         folder = dataiku.Folder(folder_id)
     except Exception:
@@ -85,10 +85,34 @@ def list_dq_files(folder_id="dq_params"):
     path = getattr(folder, "path", None)
     if not path or not os.path.isdir(path):
         return []
-    return sorted([
+    
+    all_files = [
         fn for fn in os.listdir(path) 
         if fn.startswith("dq_config_") and (fn.endswith(".json") or fn.endswith(".yaml"))
-    ])
+    ]
+    
+    # Si aucun filtre, retourner tous les fichiers
+    if not stream and not project and not dq_point:
+        return sorted(all_files)
+    
+    # Filtrer par contexte
+    filtered_files = []
+    for fn in all_files:
+        config = read_dq_file(fn, folder_id)
+        if config and 'context' in config:
+            ctx = config['context']
+            # Vérifier si le contexte correspond
+            match = True
+            if stream and ctx.get('stream') != stream:
+                match = False
+            if project and ctx.get('project') != project:
+                match = False
+            if dq_point and ctx.get('dq_point') != dq_point:
+                match = False
+            if match:
+                filtered_files.append(fn)
+    
+    return sorted(filtered_files)
 
 
 def first(val):

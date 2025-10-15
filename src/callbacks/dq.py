@@ -37,12 +37,12 @@ def register_dq_callbacks(app):
         Input("dq-point", "value")
     )
     def update_dq_list(_n, stream, project, dq_point):
-        """Met à jour la liste des configurations DQ"""
+        """Met à jour la liste des configurations DQ filtrées par contexte"""
         if not stream or not project or not dq_point:
             return dbc.Alert("Sélectionne Stream, Projet et DQ Point.", color="light")
-        files = list_dq_files("dq_params")
+        files = list_dq_files("dq_params", stream=stream, project=project, dq_point=dq_point)
         if not files:
-            return dbc.Alert("Aucune configuration DQ publiée.", color="light")
+            return dbc.Alert(f"Aucune configuration DQ publiée pour {stream} / {project} / {dq_point}.", color="light")
         items = []
         for fn in files:
             items.append(dbc.ListGroupItem([
@@ -143,10 +143,10 @@ def register_dq_callbacks(app):
         success = duplicate_dq_file(filename, new_filename)
         
         if success:
-            # Recharger la liste
-            files = list_dq_files("dq_params")
+            # Recharger la liste filtrée par contexte
+            files = list_dq_files("dq_params", stream=stream, project=project, dq_point=dq_point)
             if not files:
-                return dbc.Alert("Aucune configuration DQ publiée.", color="light")
+                return dbc.Alert(f"Aucune configuration DQ publiée pour {stream} / {project} / {dq_point}.", color="light")
             items = []
             for fn in files:
                 items.append(dbc.ListGroupItem([
@@ -225,10 +225,10 @@ def register_dq_callbacks(app):
         success = rename_dq_file(old_filename, new_filename)
         
         if success:
-            # Recharger la liste
-            files = list_dq_files("dq_params")
+            # Recharger la liste filtrée par contexte
+            files = list_dq_files("dq_params", stream=stream, project=project, dq_point=dq_point)
             if not files:
-                return dbc.Alert("Aucune configuration DQ publiée.", color="light"), ""
+                return dbc.Alert(f"Aucune configuration DQ publiée pour {stream} / {project} / {dq_point}.", color="light"), ""
             items = []
             for fn in files:
                 items.append(dbc.ListGroupItem([
@@ -301,10 +301,10 @@ def register_dq_callbacks(app):
         success = delete_dq_file(filename)
         
         if success:
-            # Recharger la liste
-            files = list_dq_files("dq_params")
+            # Recharger la liste filtrée par contexte
+            files = list_dq_files("dq_params", stream=stream, project=project, dq_point=dq_point)
             if not files:
-                return dbc.Alert("Aucune configuration DQ publiée.", color="light")
+                return dbc.Alert(f"Aucune configuration DQ publiée pour {stream} / {project} / {dq_point}.", color="light")
             items = []
             for fn in files:
                 items.append(dbc.ListGroupItem([
