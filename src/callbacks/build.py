@@ -680,8 +680,7 @@ def register_build_callbacks(app):
         Output({"role": "test-source-inputs"}, "children"),
         Input({"role": "test-source-type"}, "value", ALL),
         State("store_datasets", "data"),
-        State("store_metrics", "data"),
-        prevent_initial_call=True
+        State("store_metrics", "data")
     )
     def update_test_source_inputs(source_type_list, ds_data, metrics):
         """Affiche les champs appropriés selon le choix database/metric"""
