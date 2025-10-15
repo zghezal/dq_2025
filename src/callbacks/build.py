@@ -1196,9 +1196,14 @@ def register_build_callbacks(app):
         for idx, t in enumerate(tests):
             test_id = t.get("id", "N/A")
             
-            # Extraire le seuil si présent
-            threshold = t.get("threshold", {})
-            threshold_str = f"{threshold.get('op', '')} {threshold.get('value', '')}" if threshold else "-"
+            # Extraire le seuil si présent (peut être un dict ou un nombre)
+            threshold = t.get("threshold")
+            if isinstance(threshold, dict):
+                threshold_str = f"{threshold.get('op', '')} {threshold.get('value', '')}"
+            elif threshold is not None:
+                threshold_str = str(threshold)
+            else:
+                threshold_str = "-"
             
             actions = html.Div([
                 dbc.Button(
