@@ -58,18 +58,15 @@ def register_build_callbacks(app):
         Output("metrics-list", "children", allow_duplicate=True),
         Output("tests-list", "children", allow_duplicate=True),
         Output("save-datasets-status", "children", allow_duplicate=True),
-        Input("url", "href"),
+        Output("ds-picker", "value", allow_duplicate=True),
+        Input("url", "search"),
         prevent_initial_call='initial_duplicate'
     )
-    def load_config_from_url(href):
+    def load_config_from_url(search):
         """Charge une configuration existante si load_config est présent dans l'URL"""
         from src.utils import read_dq_file
         
-        decoded_href = urlparse.unquote(href) if href else ""
-        q = {}
-        if decoded_href and '?' in decoded_href:
-            query_string = '?' + decoded_href.split('?', 1)[1]
-            q = parse_query(query_string)
+        q = parse_query(search) if search else {}
         
         # Si load_config est présent, charger la configuration
         if q.get("load_config"):
@@ -100,12 +97,15 @@ def register_build_callbacks(app):
                     ) for t in tests
                 ]
                 
+                # Extraire les datasets sélectionnés pour mettre à jour ds-picker
+                selected_datasets = [d.get("dataset") for d in datasets if d.get("dataset")]
+                
                 status_msg = f"✅ Configuration chargée: {len(datasets)} dataset(s), {len(metrics)} métrique(s), {len(tests)} test(s)"
                 
-                return datasets, metrics, tests, html.Div(metrics_items), html.Div(tests_items), status_msg
+                return datasets, metrics, tests, html.Div(metrics_items), html.Div(tests_items), status_msg, selected_datasets
         
         # Sinon, ne pas mettre à jour (no_update)
-        return no_update, no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
         Output("ds-picker", "options"), 
