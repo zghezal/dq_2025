@@ -80,7 +80,8 @@ def register_dq_callbacks(app):
     
     # === Action: Modifier ===
     @app.callback(
-        Output("url", "href", allow_duplicate=True),
+        Output("url", "pathname", allow_duplicate=True),
+        Output("url", "search", allow_duplicate=True),
         Input({"type": "dq-modify", "file": ALL}, "n_clicks"),
         State("dq-stream", "value"),
         State("dq-project", "value"),
@@ -90,12 +91,12 @@ def register_dq_callbacks(app):
     def modify_config(n_clicks, stream, project, dq_point):
         """Redirige vers Build avec les données du fichier chargées"""
         if not any(n_clicks):
-            return no_update
+            return no_update, no_update
         
         # Identifier quel bouton a été cliqué
         triggered = ctx.triggered_id
         if not triggered:
-            return no_update
+            return no_update, no_update
         
         filename = triggered["file"]
         
@@ -109,7 +110,8 @@ def register_dq_callbacks(app):
             q.append(f"dq_point={dq_point}")
         q.append(f"load_config={filename}")
         query_string = ("?" + "&".join(q)) if q else ""
-        return f"/build{query_string}"
+        
+        return "/build", query_string
     
     # === Action: Dupliquer ===
     @app.callback(
