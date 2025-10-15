@@ -465,36 +465,30 @@ def register_build_callbacks(app):
         ], className="mb-3")
 
         if test_type in ("null_rate", "uniqueness", "range", "regex"):
-            # Groupe 2: Application du test
-            target_card = dbc.Card([
-                dbc.CardHeader("🎯 Application du test"),
+            metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
+            
+            # Groupe 2: Choix du type de source
+            source_choice_card = dbc.Card([
+                dbc.CardHeader("🎯 Source des données"),
                 dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.Label("Base de données (alias)"),
-                            dcc.Dropdown(
-                                id={"role": "test-db"},
-                                options=[{"label": a, "value": a} for a in ds_aliases],
-                                value=ds_aliases[0] if ds_aliases else None,
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6),
-                        dbc.Col([
-                            html.Label("Colonne"),
-                            dcc.Dropdown(
-                                id={"role": "test-col"},
-                                options=[],
-                                placeholder="Choisir une colonne",
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6)
-                    ])
+                    html.Label("Type de source", className="mb-2"),
+                    dcc.RadioItems(
+                        id={"role": "test-source-type"},
+                        options=[
+                            {"label": " 📁 Base de données (colonne)", "value": "database"},
+                            {"label": " 📊 Métrique", "value": "metric"}
+                        ],
+                        value="database",
+                        persistence=True,
+                        persistence_type="session",
+                        className="mb-3"
+                    ),
+                    html.Div(id={"role": "test-source-inputs"})
                 ])
             ], className="mb-3")
+            
+            # Application selon le choix (sera géré par callback)
+            target_card = source_choice_card
             
             # Groupe 3: Paramètres spécifiques
             params_content = []
@@ -683,6 +677,59 @@ def register_build_callbacks(app):
         return dbc.Alert("Type non géré pour l'instant.", color="warning")
 
     @app.callback(
+        Output({"role": "test-source-inputs"}, "children"),
+        Input({"role": "test-source-type"}, "value", ALL),
+        State("store_datasets", "data"),
+        State("store_metrics", "data"),
+        prevent_initial_call=True
+    )
+    def update_test_source_inputs(source_type_list, ds_data, metrics):
+        """Affiche les champs appropriés selon le choix database/metric"""
+        source_type = first(source_type_list) or "database"
+        ds_aliases = [d["alias"] for d in (ds_data or [])]
+        metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
+        
+        if source_type == "database":
+            return dbc.Row([
+                dbc.Col([
+                    html.Label("Base de données (alias)"),
+                    dcc.Dropdown(
+                        id={"role": "test-db"},
+                        options=[{"label": a, "value": a} for a in ds_aliases],
+                        value=ds_aliases[0] if ds_aliases else None,
+                        clearable=False,
+                        persistence=True,
+                        persistence_type="session"
+                    )
+                ], md=6),
+                dbc.Col([
+                    html.Label("Colonne"),
+                    dcc.Dropdown(
+                        id={"role": "test-col"},
+                        options=[],
+                        placeholder="Choisir une colonne",
+                        clearable=False,
+                        persistence=True,
+                        persistence_type="session"
+                    )
+                ], md=6)
+            ])
+        else:  # metric
+            return dbc.Row([
+                dbc.Col([
+                    html.Label("Métrique"),
+                    dcc.Dropdown(
+                        id={"role": "test-metric"},
+                        options=[{"label": f"📊 {mid}", "value": mid} for mid in metric_ids],
+                        placeholder="Choisir une métrique",
+                        clearable=False,
+                        persistence=True,
+                        persistence_type="session"
+                    )
+                ], md=12)
+            ])
+    
+    @app.callback(
         Output({"role": "test-col"}, "options"),
         Output("toast", "is_open", allow_duplicate=True),
         Output("toast", "children", allow_duplicate=True),
@@ -744,6 +791,7 @@ def register_build_callbacks(app):
         Input({"role": "test-sof"}, "value", ALL),
         Input({"role": "test-db"}, "value", ALL),
         Input({"role": "test-col"}, "value", ALL),
+        Input({"role": "test-metric"}, "value", ALL),
         Input({"role": "test-op"}, "value", ALL),
         Input({"role": "test-thr"}, "value", ALL),
         Input({"role": "test-min"}, "value", ALL),
@@ -753,7 +801,7 @@ def register_build_callbacks(app):
         Input({"role": "test-ref-col"}, "value", ALL),
         prevent_initial_call=True
     )
-    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
+    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
         """Génère la prévisualisation JSON du test"""
         if not ttype:
             return ""
@@ -767,6 +815,7 @@ def register_build_callbacks(app):
         
         tid, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
         db, col = first_with_default(db_list), first_with_default(col_list)
+        metric = first_with_default(metric_list)
         op, thr = first_with_default(op_list), first_with_default(thr_list)
         vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
         pat = first_with_default(pat_list)
@@ -779,7 +828,12 @@ def register_build_callbacks(app):
             "sample_on_fail": ("yes" in (sof or []))
         }
         if ttype in ("null_rate", "uniqueness", "range", "regex"):
-            obj.update({"database": db or "", "column": col or ""})
+            # Si une métrique est sélectionnée, utiliser la métrique
+            if metric:
+                obj.update({"metric": metric})
+            else:
+                obj.update({"database": db or "", "column": col or ""})
+            
             if ttype == "range":
                 obj.update({"min": vmin, "max": vmax})
             if ttype == "regex":
@@ -810,6 +864,7 @@ def register_build_callbacks(app):
         State({"role": "test-sof"}, "value", ALL),
         State({"role": "test-db"}, "value", ALL),
         State({"role": "test-col"}, "value", ALL),
+        State({"role": "test-metric"}, "value", ALL),
         State({"role": "test-op"}, "value", ALL),
         State({"role": "test-thr"}, "value", ALL),
         State({"role": "test-min"}, "value", ALL),
@@ -818,7 +873,7 @@ def register_build_callbacks(app):
         State({"role": "test-ref-db"}, "value", ALL),
         State({"role": "test-ref-col"}, "value", ALL),
     )
-    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
+    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
         """Ajoute un test au store et met à jour la liste"""
         if not n:
             return "", tests, "", no_update
@@ -842,6 +897,7 @@ def register_build_callbacks(app):
                 return "Prévisualisation vide/invalide.", tests, no_update, no_update
             tid, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
             db, col = first_with_default(db_list), first_with_default(col_list)
+            metric = first_with_default(metric_list)
             op, thr = first_with_default(op_list), first_with_default(thr_list)
             vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
             pat = first_with_default(pat_list)
@@ -853,7 +909,12 @@ def register_build_callbacks(app):
                 "sample_on_fail": ("yes" in (sof or []))
             }
             if ttype in ("null_rate", "uniqueness", "range", "regex"):
-                t.update({"database": db or "", "column": col or ""})
+                # Si une métrique est sélectionnée, utiliser la métrique
+                if metric:
+                    t.update({"metric": metric})
+                else:
+                    t.update({"database": db or "", "column": col or ""})
+                
                 if ttype == "range":
                     t.update({"min": vmin, "max": vmax})
                 if ttype == "regex":
