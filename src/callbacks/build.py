@@ -44,8 +44,9 @@ def register_build_callbacks(app):
                 color="warning",
                 className="mb-3"
             )
+        dq_point_text = f" • Point DQ = {q['dq_point']}" if q.get("dq_point") else ""
         return dbc.Alert(
-            f"Contexte: Stream = {q['stream']} • Projet = {q['project']}",
+            f"Contexte: Stream = {q['stream']} • Projet = {q['project']}{dq_point_text}",
             color="info",
             className="mb-3"
         )
