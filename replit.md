@@ -42,6 +42,11 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
 - **Configuration Publication**: Ability to save defined DQ configurations to managed folders in JSON or YAML format.
 - **Configuration Visualization**: A dedicated page to browse, display in tabular format, and view full details (via modal) of stored configurations.
 - **Inline Documentation**: Integrated help modals for all metric and test types with examples and parameter explanations.
+- **DQ Management Actions**: Full CRUD operations on published configurations:
+  - **Modifier**: Redirects to Build page with configuration pre-loaded for editing
+  - **Dupliquer**: Creates a copy of the configuration with auto-generated timestamped name
+  - **Renommer**: Modal-based renaming with validation to prevent filename conflicts
+  - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
 ## External Dependencies
 - **dash**: The primary web application framework.
