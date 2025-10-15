@@ -29,15 +29,12 @@ def register_build_callbacks(app):
     
     @app.callback(
         Output("ctx-banner", "children"),
-        Input("url", "href")
+        Input("url", "search")
     )
-    def update_ctx_banner(href):
-        """Affiche le contexte (Stream/Project) extrait de l'URL"""
-        decoded_href = urlparse.unquote(href) if href else ""
-        q = {}
-        if decoded_href and '?' in decoded_href:
-            query_string = '?' + decoded_href.split('?', 1)[1]
-            q = parse_query(query_string)
+    def update_ctx_banner(search):
+        """Affiche le contexte (Stream/Project/DQ Point) extrait de l'URL"""
+        q = parse_query(search) if search else {}
+        
         if not q.get("stream") or not q.get("project"):
             return dbc.Alert(
                 "Contexte non défini (utilise l'accueil pour choisir un Stream et un Projet).",
@@ -120,15 +117,11 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output("ds-picker", "options"), 
-        Input("url", "href")
+        Input("url", "search")
     )
-    def update_dataset_options(href):
+    def update_dataset_options(search):
         """Met à jour les datasets disponibles selon le contexte"""
-        decoded_href = urlparse.unquote(href) if href else ""
-        q = {}
-        if decoded_href and '?' in decoded_href:
-            query_string = '?' + decoded_href.split('?', 1)[1]
-            q = parse_query(query_string)
+        q = parse_query(search) if search else {}
         
         stream = q.get("stream")
         projet = q.get("project") 
