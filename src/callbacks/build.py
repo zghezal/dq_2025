@@ -59,18 +59,26 @@ def register_build_callbacks(app):
         Output("tests-list", "children", allow_duplicate=True),
         Output("save-datasets-status", "children", allow_duplicate=True),
         Output("ds-picker", "value", allow_duplicate=True),
+        Input("url", "pathname"),
         Input("url", "search"),
         prevent_initial_call='initial_duplicate'
     )
-    def load_config_from_url(search):
+    def load_config_from_url(pathname, search):
         """Charge une configuration existante si load_config est présent dans l'URL"""
         from src.utils import read_dq_file
         
+        # Ne traiter que si on est sur la page Build
+        if pathname != "/build":
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        
         q = parse_query(search) if search else {}
+        
+        print(f"DEBUG load_config_from_url: pathname={pathname}, search={search}, q={q}")
         
         # Si load_config est présent, charger la configuration
         if q.get("load_config"):
             filename = q["load_config"]
+            print(f"DEBUG: Chargement de la config {filename}")
             config = read_dq_file(filename, "dq_params")
             
             if config:
@@ -78,6 +86,8 @@ def register_build_callbacks(app):
                 datasets = config.get("databases", [])
                 metrics = config.get("metrics", [])
                 tests = config.get("tests", [])
+                
+                print(f"DEBUG: Config chargée - {len(datasets)} datasets, {len(metrics)} métriques, {len(tests)} tests")
                 
                 # Créer les listes visuelles pour métriques
                 metrics_items = [
@@ -105,6 +115,7 @@ def register_build_callbacks(app):
                 return datasets, metrics, tests, html.Div(metrics_items), html.Div(tests_items), status_msg, selected_datasets
         
         # Sinon, ne pas mettre à jour (no_update)
+        print("DEBUG: Pas de load_config dans l'URL")
         return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
