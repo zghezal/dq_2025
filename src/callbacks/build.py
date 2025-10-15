@@ -55,6 +55,9 @@ def register_build_callbacks(app):
         Output("store_datasets", "data", allow_duplicate=True),
         Output("store_metrics", "data", allow_duplicate=True),
         Output("store_tests", "data", allow_duplicate=True),
+        Output("metrics-list", "children", allow_duplicate=True),
+        Output("tests-list", "children", allow_duplicate=True),
+        Output("save-datasets-status", "children", allow_duplicate=True),
         Input("url", "href"),
         prevent_initial_call='initial_duplicate'
     )
@@ -79,10 +82,30 @@ def register_build_callbacks(app):
                 metrics = config.get("metrics", [])
                 tests = config.get("tests", [])
                 
-                return datasets, metrics, tests
+                # Créer les listes visuelles pour métriques
+                metrics_items = [
+                    html.Pre(
+                        json.dumps(m, ensure_ascii=False, indent=2),
+                        className="p-2 mb-2",
+                        style={"background": "#111", "color": "#eee"}
+                    ) for m in metrics
+                ]
+                
+                # Créer les listes visuelles pour tests
+                tests_items = [
+                    html.Pre(
+                        json.dumps(t, ensure_ascii=False, indent=2),
+                        className="p-2 mb-2",
+                        style={"background": "#111", "color": "#eee"}
+                    ) for t in tests
+                ]
+                
+                status_msg = f"✅ Configuration chargée: {len(datasets)} dataset(s), {len(metrics)} métrique(s), {len(tests)} test(s)"
+                
+                return datasets, metrics, tests, html.Div(metrics_items), html.Div(tests_items), status_msg
         
         # Sinon, ne pas mettre à jour (no_update)
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
         Output("ds-picker", "options"), 
