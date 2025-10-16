@@ -27,6 +27,37 @@ from src.utils import (
 from src.metrics_registry import get_metric_options, get_metric_meta
 from src.dq_runner import run_dq_config
 import pandas as pd
+from dash import dash_table
+
+
+def generate_metric_description(metric):
+    """Génère une description condensée d'une métrique"""
+    parts = []
+    
+    # Type et database
+    mtype = metric.get("type", "")
+    db = metric.get("database", "")
+    if db:
+        parts.append(f"Base: {db}")
+    
+    # Colonnes
+    col = metric.get("column", [])
+    if isinstance(col, list) and col:
+        parts.append(f"Colonnes: {', '.join(col)}")
+    elif col:
+        parts.append(f"Colonne: {col}")
+    
+    # Filtre WHERE
+    where = metric.get("where", "")
+    if where:
+        parts.append(f"Filtre: {where}")
+    
+    # Expression
+    expr = metric.get("expr", "")
+    if expr:
+        parts.append(f"Expr: {expr}")
+    
+    return " • ".join(parts) if parts else "-"
 
 
 def register_build_callbacks(app):
@@ -252,7 +283,19 @@ def register_build_callbacks(app):
                             min=1
                         ),
                         html.Small("Saisis seulement le numéro. Préfixe 'M-' sera ajouté automatiquement.", className="text-muted")
-                    ], md=12)
+                    ], md=6),
+                    dbc.Col([
+                        html.Label("Exporter la métrique"),
+                        dbc.Checklist(
+                            id={"role": "metric-export"},
+                            options=[{"label": " Oui, exporter cette métrique", "value": "export"}],
+                            value=["export"],
+                            persistence=True,
+                            persistence_type="session",
+                            className="mt-2"
+                        ),
+                        html.Small("Si cochée, la métrique sera incluse dans les exports", className="text-muted")
+                    ], md=6)
                 ])
             ])
         ], className="mb-3")
@@ -550,8 +593,9 @@ def register_build_callbacks(app):
         State({"role": "metric-where"}, "value", ALL),
         State({"role": "metric-expr"}, "value", ALL),
         State({"role": "metric-param", "name": ALL}, "value"),
+        State({"role": "metric-export"}, "value", ALL),
     )
-    def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values):
+    def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values, mexport_list):
         """Ajoute une métrique au store et met à jour la liste"""
         if not n:
             return "", metrics, "", no_update
@@ -624,6 +668,10 @@ def register_build_callbacks(app):
                 # state values for metric-param are not directly accessible here; instead get them from function args by adding States
             except Exception:
                 pass
+            
+            # Capture export value (checkbox returns list, check if "export" is in it)
+            mexport = first(mexport_list) if mexport_list else []
+            m["export"] = "export" in (mexport or [])
         
         metrics = (metrics or [])
         existing_ids = {x.get("id") for x in metrics}
@@ -658,6 +706,65 @@ def register_build_callbacks(app):
             ) for x in metrics
         ]
         return f"Métrique ajoutée: {m['id']}", metrics, html.Div(items), "tab-metric-viz"
+
+    @app.callback(
+        Output("metrics-table-container", "children"),
+        Input("store_metrics", "data")
+    )
+    def display_metrics_table(metrics):
+        """Affiche les métriques dans un tableau structuré (4 colonnes + Actions)"""
+        if not metrics:
+            return dbc.Alert("Aucune métrique créée. Utilisez l'onglet 'Créer' pour ajouter des métriques.", color="info")
+        
+        # Préparer les données pour le tableau
+        table_data = []
+        for m in metrics:
+            table_data.append({
+                "ID": m.get("id", "-"),
+                "Type": m.get("type", "-"),
+                "Export": "✓ Oui" if m.get("export", False) else "✗ Non",
+                "Description": generate_metric_description(m),
+                "_raw": json.dumps(m, ensure_ascii=False)  # Données brutes pour les actions
+            })
+        
+        # Créer le tableau DataTable
+        table = dash_table.DataTable(
+            data=table_data,
+            columns=[
+                {"name": "ID", "id": "ID"},
+                {"name": "Type", "id": "Type"},
+                {"name": "Export", "id": "Export"},
+                {"name": "Description", "id": "Description"},
+            ],
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+            },
+            style_header={
+                'backgroundColor': '#f8f9fa',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f8f9fa'
+                }
+            ],
+            style_cell_conditional=[
+                {'if': {'column_id': 'ID'}, 'width': '10%'},
+                {'if': {'column_id': 'Type'}, 'width': '10%'},
+                {'if': {'column_id': 'Export'}, 'width': '10%'},
+                {'if': {'column_id': 'Description'}, 'width': '70%'},
+            ]
+        )
+        
+        return html.Div([
+            html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
+            table
+        ])
 
     # ===== Tests =====
     
@@ -1165,86 +1272,6 @@ def register_build_callbacks(app):
             return f"Erreur de publication : {e}"
 
     # ===== Tableaux de visualisation =====
-    
-    @app.callback(
-        Output("metrics-table-container", "children"),
-        Input("store_metrics", "data")
-    )
-    def display_metrics_table(metrics):
-        """Affiche le tableau de visualisation des métriques avec actions"""
-        if not metrics:
-            return dbc.Alert("Aucune métrique définie. Utilisez l'onglet 'Créer' pour en ajouter.", color="info")
-        
-        # Créer les lignes du tableau avec boutons d'action
-        table_rows = []
-        
-        # En-tête
-        header = html.Tr([
-            html.Th("ID"),
-            html.Th("Type"),
-            html.Th("Base"),
-            html.Th("Colonne"),
-            html.Th("Where"),
-            html.Th("Expression"),
-            html.Th("Actions", style={"width": "200px"})
-        ])
-        
-        # Lignes de données
-        for idx, m in enumerate(metrics):
-            metric_id = m.get("id", "N/A")
-            has_print = m.get("type") in ("row_count", "sum", "mean", "distinct_count")
-            
-            actions = html.Div([
-                dbc.Button(
-                    "✏️", 
-                    id={"type": "edit-metric", "index": idx},
-                    color="warning",
-                    size="sm",
-                    className="me-1",
-                    title="Modifier"
-                ),
-                dbc.Button(
-                    "🗑️", 
-                    id={"type": "delete-metric", "index": idx},
-                    color="danger",
-                    size="sm",
-                    className="me-1",
-                    title="Supprimer"
-                ),
-                dbc.Button(
-                    "🖨️", 
-                    id={"type": "print-metric", "index": idx},
-                    color="info",
-                    size="sm",
-                    title="Print",
-                    style={"display": "inline-block" if has_print else "none"}
-                ) if has_print else None
-            ])
-            
-            row = html.Tr([
-                html.Td(metric_id),
-                html.Td(m.get("type", "N/A")),
-                html.Td(m.get("database", "-")),
-                html.Td(m.get("column", "-")),
-                html.Td(m.get("where", "-")),
-                html.Td(m.get("expr", "-")),
-                html.Td(actions)
-            ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
-            table_rows.append(row)
-        
-        table = dbc.Table(
-            [html.Thead(header), html.Tbody(table_rows)],
-            bordered=True,
-            hover=True,
-            responsive=True,
-            striped=False
-        )
-        
-        return html.Div([
-            html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
-            table,
-            html.Div(id="metric-action-status", className="mt-2")
-        ])
     
     @app.callback(
         Output("tests-table-container", "children"),

@@ -87,6 +87,23 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - Callbacks now use zone-based filtering instead of DQ Point mapping
   - Datasets automatically loaded when zone is selected
 
+### **Metric Visualization Improvements**
+- **Added Export Parameter**: New checkbox field in metric creation form to mark metrics for export
+  - Located in "Identification" section alongside metric ID
+  - Defaults to checked (export enabled)
+  - Stored as boolean `export` field in metric configuration
+- **Simplified Metric Table**: Redesigned metric visualization with streamlined 4-column layout:
+  - **ID**: Unique metric identifier (M-001, M-002, etc.)
+  - **Type**: Metric type (range)
+  - **Export**: Export status (✓ Oui / ✗ Non)
+  - **Description**: Auto-generated condensed summary of metric parameters
+    - Includes: Database, Column(s), WHERE filter, Expression
+    - Format: "Base: X • Colonnes: Y, Z • Filtre: W"
+- **Enhanced Data Sourcing**: `get_columns_for_dataset()` now supports multiple file locations
+  - Primary: `sourcing/input/` (inventory datasets)
+  - Fallback: `./datasets/` (legacy datasets)
+  - Handles both .csv and .parquet extensions
+
 ### **Earlier Changes**
 - **Dynamic Inventory Loading**: Modified `src/config.py` to dynamically load streams, projects, and datasets from `config/inventory.yaml` instead of using hardcoded test data
   - Now loads real data: Stream A (P1, P2) and Stream B (P1, P3)
