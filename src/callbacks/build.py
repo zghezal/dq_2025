@@ -264,8 +264,8 @@ def register_build_callbacks(app):
             ])
         ], className="mb-3")
 
-        # Groupe 3: Filtres et Options
-        # Groupe 3: Filtres et Options (build from meta.params)
+        # Groupe 3: Filtres et Options (paramètres supplémentaires uniquement)
+        # On exclut les types "dataset" et "columns" car déjà gérés dans le Groupe 2
         extras_content = []
         params = meta.get("params", []) if meta else []
         for p in params:
@@ -275,6 +275,11 @@ def register_build_callbacks(app):
             p_name = p.get("name")
             p_label = p.get("label") or p_name
             p_type = p.get("type") or "text"
+            
+            # Ignorer les paramètres "dataset" et "columns" (déjà dans Groupe 2)
+            if p_type in ["dataset", "columns"]:
+                continue
+                
             # text param: simple input
             if p_type == "text":
                 extras_content.append(html.Label(p_label))
@@ -287,32 +292,6 @@ def register_build_callbacks(app):
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                ))
-                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
-            # dataset param: dropdown of aliases
-            elif p_type == "dataset":
-                extras_content.append(html.Label(p_label))
-                extras_content.append(dcc.Dropdown(
-                    id={"role": "metric-param", "name": p_name},
-                    options=[{"label": a, "value": a} for a in ds_aliases],
-                    value=ds_aliases[0] if ds_aliases else None,
-                    clearable=False,
-                    persistence=True,
-                    persistence_type="session",
-                    placeholder=p.get("placeholder", "Sélectionne une base"),
-                ))
-                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
-            # columns param: dropdown populated dynamically (multi if requested)
-            elif p_type == "columns":
-                extras_content.append(html.Label(p_label))
-                extras_content.append(dcc.Dropdown(
-                    id={"role": "metric-param", "name": p_name},
-                    options=[],
-                    multi=p.get("multi", False),
-                    placeholder=p.get("placeholder", "Choisir une ou plusieurs colonnes"),
-                    persistence=True,
-                    persistence_type="session",
-                    clearable=False
                 ))
                 extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
 
