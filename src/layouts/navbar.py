@@ -12,7 +12,7 @@ def navbar():
             dbc.Nav([
                 dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
                 dbc.NavItem(dbc.NavLink("DQ Inventory", href="/dq-inventory", active="exact")),
-                dbc.NavItem(dbc.NavLink("Builder", href="/build", active="exact")),
+                dbc.NavItem(dbc.NavLink("Builder", href="/select-stream", active="exact")),
                 dbc.NavItem(dbc.NavLink("Runner", href="/dq-runner", active="exact")),
                 dbc.NavItem(dbc.NavLink("Drop&DQ", href="/drop-dq", active="exact")),
                 dbc.NavItem(dbc.NavLink("Configurations", href="/configs", active="exact"))

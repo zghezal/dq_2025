@@ -22,7 +22,7 @@ def dq_management_dashboard_page():
                 dbc.CardHeader("Builder", className="bg-primary text-white"),
                 dbc.CardBody([
                     html.P("Créez et configurez de nouvelles règles de qualité des données."),
-                    dbc.Button("Builder", href="/build", color="primary", className="me-2")
+                    dbc.Button("Builder", href="/select-stream", color="primary", className="me-2")
                 ])
             ], className="shadow"), md=4),
             dbc.Col(dbc.Card([
