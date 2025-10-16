@@ -173,8 +173,8 @@ def register_navigation_callbacks(app):
         Output("inventory-datasets-store", "data"),
         Output("store_datasets", "data", allow_duplicate=True),
         Input("select-dq-point-dropdown", "value"),
-        State("url", "search"),
-        prevent_initial_call=True
+        Input("url", "search"),
+        prevent_initial_call='initial_duplicate'
     )
     def populate_datasets_for_dq_point(dq_point, search):
         """Remplit la checklist et le store avec les datasets correspondant au DQ point sélectionné.
