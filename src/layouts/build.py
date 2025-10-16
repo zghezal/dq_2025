@@ -11,10 +11,10 @@ def build_page():
         html.Div(id="ctx-banner"),
         html.H3("🔧 Configuration DQ Builder", className="mb-3"),
         
-        dcc.Store(id="store_datasets", storage_type="memory"),
-        dcc.Store(id="store_metrics", storage_type="memory"),
-        dcc.Store(id="store_tests", storage_type="memory"),
-        dcc.Store(id="store_edit_metric", storage_type="memory"),
+        dcc.Store(id="store_datasets", storage_type="session"),
+        dcc.Store(id="store_metrics", storage_type="session"),
+        dcc.Store(id="store_tests", storage_type="session"),
+        dcc.Store(id="store_edit_metric", storage_type="session"),
 
         dbc.Tabs([
             # Onglet 1: Datasets
