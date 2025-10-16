@@ -144,14 +144,23 @@ def register_build_callbacks(app):
         # Use inventory store data (populated at select-dq-point)
         if inv_store_data and isinstance(inv_store_data, dict):
             items = inv_store_data.get("datasets", []) or []
+            inv_zone = inv_store_data.get("zone")
+            
             # derive dataset display names (prefer 'name', fallback to alias)
             names = [it.get("name") or it.get("alias") for it in items]
             options = [{"label": n, "value": n} for n in names]
 
             print(f"[DEBUG] Inventory store has {len(items)} datasets: {[it.get('alias') for it in items]}")
 
-            # Auto-load into store_datasets if empty and context present
-            if not current_data and stream and projet and zone and names:
+            # Auto-load datasets when:
+            # 1. Store is empty (first load)
+            # 2. Zone in URL matches zone in inventory (zone changed, force reload)
+            should_auto_load = (
+                stream and projet and zone and names and
+                (not current_data or zone == inv_zone)
+            )
+            
+            if should_auto_load:
                 auto_data = []
                 for it, name in zip(items, names):
                     alias = it.get("alias") or (name and name.split(".")[0].lower())
