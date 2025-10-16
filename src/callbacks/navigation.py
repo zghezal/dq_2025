@@ -148,62 +148,89 @@ def register_navigation_callbacks(app):
         params = f"?stream={stream}&project={project_value}"
         return "/select-dq-point", params
 
+    # === Inventory integration: Peupler le dropdown des zones ===
+    from src.inventory import get_zones, get_datasets_for_zone
+
+    @app.callback(
+        Output("select-zone-dropdown", "options"),
+        Input("url", "search"),
+        State("url", "pathname"),
+        prevent_initial_call=False
+    )
+    def populate_zone_dropdown(search, pathname):
+        """Remplit le dropdown des zones basé sur stream/project de l'URL."""
+        if pathname != "/select-dq-point":
+            return []
+        
+        stream_id = None
+        project_id = None
+        if search:
+            q = urlparse.parse_qs(search.lstrip('?'))
+            stream_id = q.get('stream', [None])[0]
+            project_id = q.get('project', [None])[0]
+        
+        print(f"[DEBUG] populate_zone_dropdown: stream={stream_id}, project={project_id}")
+        
+        zones = get_zones(stream_id=stream_id, project_id=project_id)
+        options = [{"label": f"{z['label']} ({z['datasets_count']} datasets)", "value": z['id']} for z in zones]
+        
+        print(f"[DEBUG] Found {len(options)} zones: {[z['id'] for z in zones]}")
+        return options
+
     @app.callback(
         Output("url", "pathname", allow_duplicate=True),
         Output("url", "search", allow_duplicate=True),
         Input("select-dq-next", "n_clicks"),
-        State("select-dq-point-dropdown", "value"),
+        State("select-zone-dropdown", "value"),
         State("url", "search"),
         prevent_initial_call=True
     )
-    def dq_point_next(n, dq_value, search):
-        if not n or not dq_value:
+    def zone_next(n, zone_value, search):
+        """Navigation: Zone → Builder avec paramètre 'zone' au lieu de 'dq_point'."""
+        if not n or not zone_value:
             return "/select-dq-point", search or ""
         q = urlparse.parse_qs((search or "").lstrip("?"))
         stream = q.get("stream", [None])[0]
         project = q.get("project", [None])[0]
-        params = f"?stream={stream}&project={project}&dq_point={dq_value}"
+        params = f"?stream={stream}&project={project}&zone={zone_value}"
         return "/build", params
-
-    # === Inventory integration: peupler la liste des datasets lors de la sélection du DQ point ===
-    from src.inventory import get_datasets_for_dq_point
 
     @app.callback(
         Output("datasets-checklist", "options"),
         Output("datasets-status", "children"),
         Output("inventory-datasets-store", "data"),
         Output("store_datasets", "data", allow_duplicate=True),
-        Input("select-dq-point-dropdown", "value"),
+        Input("select-zone-dropdown", "value"),
         Input("url", "search"),
         prevent_initial_call='initial_duplicate'
     )
-    def populate_datasets_for_dq_point(dq_point, search):
-        """Remplit la checklist et le store avec les datasets correspondant au DQ point sélectionné.
+    def populate_datasets_for_zone(zone_id, search):
+        """Remplit la checklist et le store avec les datasets correspondant à la zone sélectionnée.
 
-        Utilise `config/inventory.yaml` via `src.utils.inventory.get_datasets_for_dq_point`.
+        Utilise `config/inventory.yaml` via `src.inventory.get_datasets_for_zone`.
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
         """
-        print(f"[DEBUG] populate_datasets_for_dq_point called: dq_point={dq_point}, search={search}")
+        print(f"[DEBUG] populate_datasets_for_zone called: zone={zone_id}, search={search}")
         
-        if not dq_point:
-            print("[DEBUG] No dq_point, returning empty")
-            return [], "Sélectionnez un DQ Point pour voir les datasets disponibles", {}, []
+        if not zone_id:
+            print("[DEBUG] No zone, returning empty")
+            return [], "Sélectionnez une zone pour voir les datasets disponibles", {}, []
 
-        stream = None
-        project = None
+        stream_id = None
+        project_id = None
         if search:
             q = urlparse.parse_qs(search.lstrip('?'))
-            stream = q.get('stream', [None])[0]
-            project = q.get('project', [None])[0]
+            stream_id = q.get('stream', [None])[0]
+            project_id = q.get('project', [None])[0]
         
-        print(f"[DEBUG] Extracted params: stream={stream}, project={project}")
+        print(f"[DEBUG] Extracted params: stream={stream_id}, project={project_id}")
 
-        datasets = get_datasets_for_dq_point(dq_point, stream=stream, project=project) or []
+        datasets = get_datasets_for_zone(zone_id, stream_id=stream_id, project_id=project_id) or []
         
         print(f"[DEBUG] Found {len(datasets)} datasets: {[d.get('alias') for d in datasets]}")
 
         options = [{"label": f"{d.get('alias') or d.get('name')}", "value": f"{d.get('alias') or d.get('name')}"} for d in datasets]
-        store_payload = {"dq_point": dq_point, "datasets": datasets}
+        store_payload = {"zone": zone_id, "datasets": datasets}
 
         # Also prepare a shape compatible with store_datasets used par la page Build
         store_datasets_payload = []
@@ -213,9 +240,9 @@ def register_navigation_callbacks(app):
             store_datasets_payload.append({"alias": alias, "dataset": name})
 
         if len(options) == 0:
-            status_msg = f"✅ DQ Point '{dq_point}' sélectionné. Aucun dataset trouvé pour Stream={stream}, Project={project}"
+            status_msg = f"✅ Zone '{zone_id}' sélectionnée. Aucun dataset trouvé pour Stream={stream_id}, Project={project_id}"
         else:
-            status_msg = f"✅ {len(options)} dataset(s) trouvé(s) pour {dq_point} (Stream={stream}, Project={project})"
+            status_msg = f"✅ {len(options)} dataset(s) trouvé(s) pour zone '{zone_id}' (Stream={stream_id}, Project={project_id})"
         
         print(f"[DEBUG] Returning {len(options)} options")
         return options, status_msg, store_payload, store_datasets_payload
