@@ -57,6 +57,8 @@ def register_navigation_callbacks(app):
         # URL-decode and strip query parameters if they're encoded in the pathname
         decoded_path = urlparse.unquote(pathname) if pathname else pathname
         clean_path = decoded_path.split('?')[0] if decoded_path else decoded_path
+        
+        # Main pages
         if clean_path in ("/", "", None):
             return home_page()
         if clean_path == "/dashboard":
@@ -71,29 +73,20 @@ def register_navigation_callbacks(app):
             return dq_inventory_page()
         if clean_path == "/dq-runner":
             return dq_runner_page()
-        if clean_path == "/drop-dq":
-            return drop_dq_page()
         if clean_path == "/configs":
             return configs_page()
-        return dbc.Container([
-            dbc.Alert("🛠️ Bientôt disponible. Revenez à la Construction pour l'instant.", color="info")
-        ], fluid=True)
-
-    # Stepper pages: Stream -> Project -> DQ Point
-    @app.callback(
-        Output("page-content", "children"),
-        Input("url", "pathname"),
-        prevent_initial_call=True
-    )
-    def display_step_pages(pathname):
-        clean_path = (pathname or "").split('?')[0]
+        
+        # Stepper pages: Stream -> Project -> DQ Point
         if clean_path == "/select-stream":
             return select_stream_page()
         if clean_path == "/select-project":
             return select_project_page()
         if clean_path == "/select-dq-point":
             return select_dq_point_page()
-        return no_update
+        
+        return dbc.Container([
+            dbc.Alert("🛠️ Bientôt disponible. Revenez à la Construction pour l'instant.", color="info")
+        ], fluid=True)
 
     @app.callback(
         Output("url", "pathname"),
@@ -109,8 +102,8 @@ def register_navigation_callbacks(app):
         return "/select-project", f"?stream={stream_value}"
 
     @app.callback(
-        Output("url", "pathname"),
-        Output("url", "search"),
+        Output("url", "pathname", allow_duplicate=True),
+        Output("url", "search", allow_duplicate=True),
         Input("select-project-next", "n_clicks"),
         State("select-project-dropdown", "value"),
         State("url", "search"),
@@ -126,8 +119,8 @@ def register_navigation_callbacks(app):
         return "/select-dq-point", params
 
     @app.callback(
-        Output("url", "pathname"),
-        Output("url", "search"),
+        Output("url", "pathname", allow_duplicate=True),
+        Output("url", "search", allow_duplicate=True),
         Input("select-dq-next", "n_clicks"),
         State("select-dq-point-dropdown", "value"),
         State("url", "search"),
