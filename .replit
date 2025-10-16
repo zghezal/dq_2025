@@ -22,13 +22,13 @@ args = "Dash App"
 name = "Dash App"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python run.py"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 5000
@@ -43,7 +43,7 @@ localPort = 33223
 externalPort = 3001
 
 [[ports]]
-localPort = 39411
+localPort = 36539
 externalPort = 3002
 
 [deployment]

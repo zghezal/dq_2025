@@ -70,6 +70,10 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
 ## Recent Changes (October 16, 2025)
+- **Dynamic Inventory Loading**: Modified `src/config.py` to dynamically load streams, projects, and datasets from `config/inventory.yaml` instead of using hardcoded test data
+  - Now loads real data: Stream A (P1, P2) and Stream B (P1, P3)
+  - Datasets loaded from `sourcing/input/` directory
+  - Automatic mapping of DQ Points (Extraction→raw, Transformation/Chargement→trusted)
 - **Simplified Navigation**: Reduced navbar to essential elements only (Home, Profile, Help button)
 - **Simplified Metric/Test Types**: Removed all non-functional metric and test types, keeping only `range` for both metrics and tests
 - **Fixed Multi-Column Selection**: Corrected the handling of multi-column dropdown to properly preserve all selected columns in JSON output
