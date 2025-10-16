@@ -15,8 +15,9 @@ def select_dq_point_page():
         dbc.Button("Aller au Builder", id="select-dq-next", color="primary", className="mt-3"),
         html.Div(id="select-dq-status", className="mt-2"),
 
-        # Store qui contient la base de datasets sélectionnée depuis l'inventory
+        # Stores pour datasets
         dcc.Store(id="inventory-datasets-store", storage_type="memory"),
+        dcc.Store(id="store_datasets", storage_type="memory"),
 
         # Affichage de la liste des datasets associés à la zone sélectionnée
         dbc.Card([

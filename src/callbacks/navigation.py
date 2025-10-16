@@ -159,7 +159,10 @@ def register_navigation_callbacks(app):
     )
     def populate_zone_dropdown(search, pathname):
         """Remplit le dropdown des zones basé sur stream/project de l'URL."""
+        print(f"[DEBUG] populate_zone_dropdown CALLED: pathname='{pathname}', search='{search}'")
+        
         if pathname != "/select-dq-point":
+            print(f"[DEBUG] pathname mismatch, returning empty. Expected '/select-dq-point', got '{pathname}'")
             return []
         
         stream_id = None
@@ -174,7 +177,7 @@ def register_navigation_callbacks(app):
         zones = get_zones(stream_id=stream_id, project_id=project_id)
         options = [{"label": f"{z['label']} ({z['datasets_count']} datasets)", "value": z['id']} for z in zones]
         
-        print(f"[DEBUG] Found {len(options)} zones: {[z['id'] for z in zones]}")
+        print(f"[DEBUG] Found {len(options)} zones with options: {options}")
         return options
 
     @app.callback(
