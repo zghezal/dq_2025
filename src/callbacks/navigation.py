@@ -124,11 +124,11 @@ def register_navigation_callbacks(app):
         if not search:
             return []
         q = urlparse.parse_qs(search.lstrip("?"))
-        stream = q.get("stream", [None])[0]
-        if not stream:
+        stream_id = q.get("stream", [None])[0]
+        if not stream_id:
             return []
         from src.config import STREAMS
-        projects = STREAMS.get(stream, [])
+        projects = STREAMS.get(stream_id, [])
         return [{"label": p, "value": p} for p in projects]
 
     @app.callback(

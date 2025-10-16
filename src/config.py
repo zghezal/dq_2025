@@ -25,18 +25,40 @@ def _load_inventory() -> Dict:
 
 
 def get_streams() -> Dict[str, List[str]]:
-    """Retourne les streams et leurs projets depuis l'inventory"""
+    """Retourne les streams et leurs projets depuis l'inventory
+    
+    Format de retour: {stream_id: [project_ids]}
+    Ex: {"A": ["P1", "P2"], "B": ["P1", "P3"]}
+    """
     inv = _load_inventory()
     streams = {}
     for s in inv.get("streams", []):
-        stream_label = s.get("label", s.get("id", ""))
+        stream_id = s.get("id", "")
         project_ids = [p.get("id") for p in s.get("projects", [])]
-        streams[stream_label] = project_ids
+        streams[stream_id] = project_ids
     return streams
 
 
-def get_datasets_for_context(stream_label: str, project_id: str, dq_point: str) -> List[str]:
-    """Retourne les datasets pour un contexte donné (stream, projet, dq_point)"""
+def get_streams_with_labels() -> Dict[str, Dict]:
+    """Retourne les streams avec leurs IDs et labels
+    
+    Format: {stream_id: {"label": "...", "projects": [...]}}
+    """
+    inv = _load_inventory()
+    streams = {}
+    for s in inv.get("streams", []):
+        stream_id = s.get("id", "")
+        stream_label = s.get("label", stream_id)
+        project_ids = [p.get("id") for p in s.get("projects", [])]
+        streams[stream_id] = {
+            "label": stream_label,
+            "projects": project_ids
+        }
+    return streams
+
+
+def get_datasets_for_context(stream_id: str, project_id: str, dq_point: str) -> List[str]:
+    """Retourne les datasets pour un contexte donné (stream_id, projet, dq_point)"""
     inv = _load_inventory()
     
     # Mapping DQ Point -> Zone
@@ -47,9 +69,9 @@ def get_datasets_for_context(stream_label: str, project_id: str, dq_point: str) 
     }
     zone_id = point_to_zone.get(dq_point, "raw")
     
-    # Trouver le stream par label
+    # Trouver le stream par ID
     for s in inv.get("streams", []):
-        if s.get("label") == stream_label or s.get("id") == stream_label:
+        if s.get("id") == stream_id:
             # Trouver le projet
             for p in s.get("projects", []):
                 if p.get("id") == project_id:
@@ -76,14 +98,14 @@ def get_dataset_mapping():
     }
     
     for s in inv.get("streams", []):
-        stream_label = s.get("label", s.get("id", ""))
+        stream_id = s.get("id", "")
         for p in s.get("projects", []):
             project_id = p.get("id")
             for dq_point, zone_id in point_to_zone.items():
                 for z in p.get("zones", []):
                     if z.get("id") == zone_id:
                         datasets = [d.get("alias") for d in z.get("datasets", [])]
-                        mapping[(stream_label, project_id, dq_point)] = datasets
+                        mapping[(stream_id, project_id, dq_point)] = datasets
     return mapping
 
 DATASET_MAPPING = get_dataset_mapping()
