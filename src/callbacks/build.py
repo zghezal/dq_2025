@@ -139,12 +139,16 @@ def register_build_callbacks(app):
         projet = q.get("project") 
         zone = q.get("zone")
         
-        # If inventory store is present (populated at select-dq-point), prefer it
+        print(f"[DEBUG] update_dataset_options: inv_store_data={inv_store_data}, current_data={current_data}")
+        
+        # Use inventory store data (populated at select-dq-point)
         if inv_store_data and isinstance(inv_store_data, dict):
             items = inv_store_data.get("datasets", []) or []
             # derive dataset display names (prefer 'name', fallback to alias)
             names = [it.get("name") or it.get("alias") for it in items]
             options = [{"label": n, "value": n} for n in names]
+
+            print(f"[DEBUG] Inventory store has {len(items)} datasets: {[it.get('alias') for it in items]}")
 
             # Auto-load into store_datasets if empty and context present
             if not current_data and stream and projet and zone and names:
@@ -152,21 +156,15 @@ def register_build_callbacks(app):
                 for it, name in zip(items, names):
                     alias = it.get("alias") or (name and name.split(".")[0].lower())
                     auto_data.append({"alias": alias, "dataset": name})
-                print(f"[DEBUG] Auto-loading {len(auto_data)} datasets from inventory into Builder")
+                print(f"[DEBUG] Auto-loading {len(auto_data)} datasets from inventory into Builder: {auto_data}")
                 return options, auto_data
 
+            print(f"[DEBUG] Returning {len(options)} options from inventory, current_data unchanged")
             return options, current_data or no_update
 
-        # Fallback behaviour: use list_project_datasets as before (deprecated)
-        datasets = list_project_datasets(stream, projet, zone)
-        options = [{"label": ds, "value": ds} for ds in datasets]
-
-        # Auto-charger les datasets dans le store s'il est vide et qu'on a un contexte
-        if not current_data and stream and projet and zone and datasets:
-            auto_data = [{"alias": ds.lower(), "dataset": ds} for ds in datasets]
-            return options, auto_data
-
-        return options, current_data or no_update
+        # No inventory data available - return empty
+        print(f"[DEBUG] No inventory data available, returning empty options")
+        return [], current_data or no_update
 
     @app.callback(
         Output("alias-mapper", "children"),
