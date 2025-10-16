@@ -481,7 +481,11 @@ def register_build_callbacks(app):
         if "database" in params or meta.get("requires_database"):
             obj["database"] = mdb or ""
         if "column" in params or meta.get("requires_column"):
-            obj["column"] = mcol or ""
+            # Handle both single column (string) and multi-column (list)
+            if isinstance(mcol, list):
+                obj["column"] = mcol if mcol else []
+            else:
+                obj["column"] = mcol or ""
         # Handle registered params: dataset/columns/where/expr
         # Look for params declared in meta and pull values from the form via pattern ids
         # Collect metric-param values from the DOM using dcc pattern ids is handled in add_metric via State
@@ -563,7 +567,11 @@ def register_build_callbacks(app):
             if "database" in params or meta.get("requires_database"):
                 m["database"] = mdb or ""
             if "column" in params or meta.get("requires_column"):
-                m["column"] = mcol or ""
+                # Handle both single column (string) and multi-column (list)
+                if isinstance(mcol, list):
+                    m["column"] = mcol if mcol else []
+                else:
+                    m["column"] = mcol or ""
             if "where" in params and mwhere:
                 m["where"] = mwhere
             if "expr" in params:
