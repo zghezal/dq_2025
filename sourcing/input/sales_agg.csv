@@ -1,0 +1,6 @@
+month,total_sales,avg_amount,num_transactions,top_region
+2024-01,1250.75,125.08,10,North
+2024-02,1890.50,157.54,12,South
+2024-03,2345.80,195.48,12,East
+2024-04,2678.90,223.24,12,West
+2024-05,3012.45,251.04,12,North

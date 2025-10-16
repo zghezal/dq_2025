@@ -35,12 +35,27 @@ def get_columns_for_dataset(ds_name):
     except Exception:
         import csv
         import os
-        csv_path = f"./datasets/{ds_name}.csv"
-        if os.path.exists(csv_path):
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                headers = next(reader, [])
-                return headers
+        
+        # Try multiple possible locations for the dataset file
+        possible_paths = [
+            f"sourcing/input/{ds_name}",  # Inventory path with extension
+            f"./datasets/{ds_name}",       # Legacy path with extension  
+            f"sourcing/input/{ds_name}.csv",  # Inventory path + .csv
+            f"./datasets/{ds_name}.csv",      # Legacy path + .csv
+        ]
+        
+        for csv_path in possible_paths:
+            if os.path.exists(csv_path):
+                try:
+                    with open(csv_path, 'r', encoding='utf-8') as f:
+                        reader = csv.reader(f)
+                        headers = next(reader, [])
+                        if headers:  # Only return if we found headers
+                            return headers
+                except Exception as e:
+                    print(f"[DEBUG] Error reading {csv_path}: {e}")
+                    continue
+        
         return []
 
 
