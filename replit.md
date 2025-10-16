@@ -16,6 +16,9 @@ The business vision behind DQ Builder is to provide a user-friendly, efficient t
 
 ### UI/UX Decisions
 The application utilizes `dash-bootstrap-components` for a responsive and modern user interface. Key UI/UX decisions include:
+- **Dual Access System**: Two distinct entry points on the home page:
+  - **Check&Drop**: Limited access for providers to deposit datasets and run DQ checks
+  - **DQ Management**: Full access for DQ developers with all features (Inventory, Builder, Runner, Drop&DQ)
 - A multi-page application structure with a persistent navigation bar.
 - A tabbed interface for the 'Build' page, organizing configuration steps (Datasets, Metrics, Tests, Publication) for improved user experience and navigation.
 - Interactive tables (`dash_table.DataTable`) for visualizing and managing metrics, tests, and published configurations.
@@ -28,7 +31,11 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
 - **Language**: Python 3.11
 - **Configuration Format**: JSON/YAML via `PyYAML`
 - **Modular Code Organization**: The application is structured into `src/` with dedicated modules for `config`, `utils`, `layouts` (UI components), and `callbacks` (business logic) to enhance maintainability and readability.
-- **Multi-Page Structure**: Implemented with `dcc.Location` for navigation between Home (`/`), DQ Management (`/dq`), Build (`/build`), and Configurations (`/configs`) pages.
+- **Multi-Page Structure**: Implemented with `dcc.Location` for navigation between:
+  - Home (`/`) with dual access selection
+  - Check&Drop Dashboard (`/check-drop-dashboard`) with limited features
+  - DQ Management Dashboard (`/dq-management-dashboard`) with full access
+  - Build (`/build`), DQ Inventory (`/dq-inventory`), Runner (`/dq-runner`), Drop&DQ (`/drop-dq`), and Configurations (`/configs`) pages
 - **Dynamic URL Handling**: Uses URL query parameters to pass context (stream, project, DQ point) between pages and decode them via `urlparse.unquote()`.
 - **Unique ID Generation**: Automatic generation of unique IDs for metrics (M-001, M-002...) and tests (T-001, T-002...).
 - **CRUD Operations**: Full Create, Read, Update, Delete (CRUD) support for metrics and tests, including cascade deletion for metrics affecting associated foreign_key tests.
