@@ -1,0 +1,127 @@
+```markdown
+# Documentation technique — Portal STDA (DQ Builder)
+
+Ce document décrit en détail l'utilité de chaque fichier et dossier important du projet. Il permet à un développeur ou à un administrateur de comprendre rapidement où se trouvent les éléments clés et comment ils interagissent.
+
+## Racine du projet
+
+- `run.py`
+	- Script d'entrée local. Importe l'objet `app` depuis `app.py` et démarre le serveur Dash.
+	- Paramètres d'écoute : host `0.0.0.0` et port `8052` (configurable dans le fichier).
+
+- `app.py`
+	- Initialise l'application Dash (`app = Dash(...)`).
+	- Définit le layout global (navbar + `page-content`) et la `validation_layout` utilisée pour que Dash puisse valider tous les callbacks multi-pages / pattern-matching ids.
+	- Enregistre les callbacks principaux (navigation, build, dq, configs).
+
+- `Description` / `README.md`
+	- Documentation projet et mode d'emploi. `Description` contient l'architecture et un sommaire des fichiers (ce fichier). `README.md` contient les informations d'usage rapide.
+
+- `dataiku_stub.py`
+	- Faux client Dataiku utilisé en local quand Dataiku n'est pas disponible. Permet de lire CSVs locaux, simuler Folder, Dataset, etc.
+
+## Dossier `src/` — code applicatif
+
+Contient le coeur de l'application : layouts (UI), callbacks (logique réactive), utils et la logique métier DQ.
+
+- `src/__init__.py`
+	- Initialise le package Python (souvent vide).
+
+- `src/config.py`
+	- Contient la configuration statique : mappings `STREAMS`, `DATASET_MAPPING`, et l'initialisation du client Dataiku (ou du stub).
+	- Point central pour ajouter de nouvelles entrées de mapping ou variables d'environnement.
+
+- `src/utils.py`
+	- Fonctions utilitaires transverses :
+		- `list_project_datasets(stream, project, dq_point)` : renvoie la liste de datasets disponibles selon le contexte ou la liste Dataiku.
+		- `get_columns_for_dataset(dataset_name)` : retourne les colonnes d'un dataset via Dataiku ou en lisant `./datasets/<name>.csv`.
+		- Helpers : `first()`, `parse_query()`, `cfg_template()`, lecture/écriture de fichiers DQ, sanitization (sanitize_metrics/tests), validation de configuration.
+	- Cœur des fonctions de fallback (CSV local) et des transformations utilisées par les callbacks.
+
+- `src/metrics_registry.py`
+	- Registre central listant les métriques disponibles et leurs métadonnées : nom d'affichage, description, params attendus, flags `requires_column`/`requires_database`.
+	- Expose `get_metric_options()` (pour peupler la dropdown) et `get_metric_meta(metric_type)`.
+
+- `src/dq_runner.py`
+	- Contient la logique permettant d'exécuter une configuration DQ sur un DataFrame (runner local pour tests et démonstrations).
+	- Utile pour la fonctionnalité "Run DQ" dans le Builder.
+
+- `src/metrics.py`
+	- Implémentations concrètes des calculs de métriques (peut rester minimal si le projet délègue au runner ou à Dataiku).
+
+## Layouts (UI) — `src/layouts/`
+
+- `src/layouts/home.py`
+	- Page d'accueil « Portal STDA » (titre + deux cartes). Propose deux parcours : DQ Management et Drop&DQ.
+
+- `src/layouts/navbar.py`
+	- Composant de navigation (brand, liens). Affiche le breadcrumb `crumb` et les liens vers les sections principales.
+
+- `src/layouts/dq.py`
+	- Page utilitaire / gestion DQ (sélection Stream/Project/DQ point et actions sur les configs). Contient modals pour rename/delete et un formulaire de filtrage.
+
+- `src/layouts/dq_landing.py` et `src/layouts/drop_landing.py`
+	- Pages "landing" qui présentent les actions disponibles pour DQ Management et Drop&DQ.
+
+- `src/layouts/build.py`
+	- Page Builder (wizard) : structure en tabs (Datasets, Métriques, Tests, Publication).
+	- Définit `dcc.Store` pour `store_datasets`, `store_metrics`, `store_tests`, `store_edit_metric`.
+	- Contient les composants UI (dropdowns, inputs, preview, modals) et placeholders pour IDs pattern-matching utilisés dans les callbacks.
+
+- `src/layouts/configs.py`
+	- Page de gestion des configurations publiées (lecture depuis `managed_folders/dq_params`, affichage, import/export, suppression).
+
+- `src/layouts/dq_inventory.py`, `src/layouts/dq_runner.py`, `src/layouts/drop_dq.py`
+	- Pages placeholder pour Inventory, Runner, et Drop (permettent d'avoir des routes et des points d'entrée même si la logique n'est pas encore implémentée).
+
+- `src/layouts/select_stream.py`, `src/layouts/select_project.py`, `src/layouts/select_dq_point.py`
+	- Pages d'étapes (stream → project → dq_point) permettant une navigation step-by-step avant d'ouvrir le Builder.
+
+## Callbacks (logique reactive) — `src/callbacks/`
+
+- `src/callbacks/navigation.py`
+	- Gère la logique de routage (affichage de `page-content` en fonction de `url.pathname`), les breadcrumbs et le stepper multi-page (select-stream → select-project → select-dq-point → build).
+
+- `src/callbacks/build.py`
+	- Ensemble complet des callbacks pour la page Build :
+		- Chargement d'une config depuis l'URL, mise à jour des stores,
+		- Peuplement des dropdowns (datasets / columns), helpers pour alias → dataset,
+		- Génération dynamique du formulaire de métrique/test à partir du `metrics_registry`, création des composants pour `metric-param` (dataset/columns/text),
+		- Preview JSON/YAML, ajout d'items dans les stores, publication vers `managed_folders`.
+	- Contient aussi la majorité des validations et des messages d'erreur/toast pour l'UX.
+
+- `src/callbacks/dq.py`
+	- Callbacks dédiés à la page `dq.py` (afficher la liste des configs, renommer, supprimer, rafraîchir).
+
+- `src/callbacks/configs.py`
+	- Callbacks pour lister et gérer les fichiers de configuration publiés dans `managed_folders/dq_params`.
+
+## Tests
+
+- `tests/test_dq_runner.py`, `tests/test_metrics.py`
+	- Tests unitaires qui vérifient le runner et certaines fonctions métiers (aide pour la CI locale).
+
+## Données & managed folders
+
+- `datasets/`
+	- Contient des CSV utilisés localement en mode développement ou pour fallback si Dataiku n'est pas présent.
+
+- `managed_folders/dq_params/`
+	- Répertoire simulant le Managed Folder Dataiku : lieu de stockage pour les configs DQ publiées (JSON/YAML). Utilisé par les callbacks de publication et la page `configs`.
+
+## Autres fichiers
+
+- `requirements.txt` : dépendances Python nécessaires pour exécuter l'app (Dash, pandas, PyYAML, …).
+
+## Conseils d'exploitation et maintenance
+
+- Pour éviter les erreurs Dash liées aux Outputs pattern-matching, conserver dans `app.validation_layout` des placeholders invisibles pour les ids dynamiques utilisés dans les callbacks (ex: `{"role":"metric-preview"}`, `{"role":"metric-column","form":"metric"}`).
+- Remplacer `dataiku_stub` par le client Dataiku pour la production, et vérifier les permissions/credentials pour l'accès aux Folders.
+- Ajouter des pages fonctionnelles (Inventory, Runner, Drop) progressivement. Les placeholders permettent d'avoir la navigation complète dès maintenant.
+
+Si tu veux, je peux :
+- Générer un diagramme visuel (SVG/PNG) montrant les composants et les flux entre eux.
+- Transformer les placeholders en pages fonctionnelles (upload CSV pour Drop&DQ, tableau inventory, run UI).
+
+-- Fin de la description --
+```

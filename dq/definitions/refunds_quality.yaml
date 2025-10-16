@@ -1,0 +1,16 @@
+id: "refunds_quality"
+label: "Refunds Quality"
+databases:
+  - alias: "refunds"
+metrics:
+  - id: "missing_rate"
+    params:
+      dataset: "refunds"
+      column: null
+tests:
+  - id: "range"
+    params:
+      value_from_metric: "missing_rate"
+      low: 0.0
+      high: 0.3
+      inclusive: true

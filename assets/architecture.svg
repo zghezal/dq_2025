@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <style>
+    .box { fill:#F8F9FA; stroke:#343A40; stroke-width:1.5; rx:8; }
+    .title { font: bold 16px sans-serif; fill:#212529; }
+    .label { font: 12px sans-serif; fill:#212529; }
+    .arrow { stroke:#6C757D; stroke-width:1.6; marker-end: url(#arrowhead); }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6C757D" />
+    </marker>
+  </defs>
+
+  <!-- Left column: runtime and entry -->
+  <g transform="translate(40,40)">
+    <rect class="box" width="220" height="70" />
+    <text class="title" x="12" y="26">run.py</text>
+    <text class="label" x="12" y="46">Démarre le serveur Dash</text>
+
+    <g transform="translate(0,100)">
+      <rect class="box" width="220" height="90" />
+      <text class="title" x="12" y="26">app.py</text>
+      <text class="label" x="12" y="46">Initialise `app`</text>
+      <text class="label" x="12" y="62">Layout global & validation_layout</text>
+    </g>
+  </g>
+
+  <!-- Center: core packages -->
+  <g transform="translate(320,40)">
+    <rect class="box" width="820" height="330" />
+    <text class="title" x="12" y="22">src/ (application core)</text>
+
+    <!-- layouts -->
+    <rect x="24" y="44" width="240" height="90" class="box"/>
+    <text class="title" x="36" y="66">src/layouts/</text>
+    <text class="label" x="36" y="86">home, navbar, build, dq, ...</text>
+
+    <!-- callbacks -->
+    <rect x="280" y="44" width="240" height="90" class="box"/>
+    <text class="title" x="292" y="66">src/callbacks/</text>
+    <text class="label" x="292" y="86">navigation, build, dq, configs</text>
+
+    <!-- utils/registry/runner -->
+    <rect x="536" y="44" width="240" height="90" class="box"/>
+    <text class="title" x="548" y="66">utils / registry</text>
+    <text class="label" x="548" y="86">metrics_registry.py</text>
+    <text class="label" x="548" y="102">dq_runner.py / utils.py</text>
+
+    <!-- stores area -->
+    <rect x="36" y="150" width="720" height="150" class="box"/>
+    <text class="title" x="48" y="174">Stores & managed folders</text>
+    <text class="label" x="48" y="196">`dcc.Store` : store_datasets, store_metrics, store_tests</text>
+    <text class="label" x="48" y="212">`managed_folders/dq_params/` (publishing)</text>
+  </g>
+
+  <!-- Right column: data sources -->
+  <g transform="translate(40,420)">
+    <rect class="box" width="220" height="90" />
+    <text class="title" x="12" y="26">datasets/ (CSV)</text>
+    <text class="label" x="12" y="46">Fallback local pour colonnes & exemples</text>
+
+    <g transform="translate(260,0)">
+      <rect class="box" width="220" height="90" />
+      <text class="title" x="12" y="26">Dataiku (optionnel)</text>
+      <text class="label" x="12" y="46">Datasets, Managed Folders</text>
+    </g>
+
+    <g transform="translate(520,0)">
+      <rect class="box" width="220" height="90" />
+      <text class="title" x="12" y="26">managed_folders/dq_params</text>
+      <text class="label" x="12" y="46">Stockage des configs DQ (JSON/YAML)</text>
+    </g>
+  </g>
+
+  <!-- arrows: runtime flow -->
+  <path class="arrow" d="M260 80 L320 80" />
+  <path class="arrow" d="M420 120 L460 120" />
+
+  <!-- arrows: app to layouts/callbacks -->
+  <path class="arrow" d="M240 140 L320 140" />
+  <path class="arrow" d="M540 140 L560 140" />
+
+  <!-- arrows: callbacks to utils/registry/runner -->
+  <path class="arrow" d="M540 160 L560 200" />
+  <path class="arrow" d="M620 160 L700 200" />
+
+  <!-- arrows: build -> stores -> managed_folders -->
+  <path class="arrow" d="M700 200 L740 200" />
+  <path class="arrow" d="M740 300 L760 420" />
+  <path class="arrow" d="M760 420 L760 450" />
+
+  <!-- arrows: datasets => utils/reg -->
+  <path class="arrow" d="M160 470 L360 200" />
+  <path class="arrow" d="M360 460 L640 200" />
+
+  <!-- Legend -->
+  <rect x="960" y="420" width="200" height="120" rx="8" fill="#FFF3CD" stroke="#856404"/>
+  <text class="title" x="975" y="444">Légende</text>
+  <text class="label" x="975" y="468">Boîtes : composants / modules</text>
+  <text class="label" x="975" y="488">Flèches : flux de données / appels</text>
+
+</svg>

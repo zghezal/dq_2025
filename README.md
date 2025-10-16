@@ -1,6 +1,20 @@
-# DQ Builder — Local Dash App (v3.6)
 
-**Fixes ciblés :**
-- **ID métrique**: champ stable (`debounce=True`, `autoComplete=off`, `persistence=session`). Le formulaire n'est *jamais* re-généré pendant la saisie.
-- **Colonnes après choix de la base**: callbacks **sans `prevent_initial_call`** et petit **toast** si aucune colonne détectée.
-- Boutons *Ajouter* gardent la reconstruction si la préview est vide.
+
+---
+## Inventory → Streams/Projects/Zones/Datasets → DQ
+- L'inventaire est dans `config/inventory.yaml` et référence les **aliases** de datasets.
+- Les définitions DQ (`dq/definitions/*.yaml`) **ne** référencent **que des aliases**.
+- Créer un DQ basé sur l'inventaire :
+  ```bash
+  python tools/create_dq_from_inventory.py --id my_dq --aliases sales_2024 customers --out dq/definitions/my_dq.yaml
+  ```
+- Exécuter un DQ (avec overrides d’alias si besoin) :
+  ```bash
+  python tools/run_dq.py --dq dq/definitions/sales_quality_v1.yaml
+  python tools/run_dq.py --dq dq/definitions/sales_quality_v1.yaml --override sales_2024=sourcing/input/sales_2024_alt.csv
+  ```
+- Connecteur **local** (CSV/Parquet) fourni; Dataiku/SharePoint sont prêts à être branchés.
+
+### Dépendances
+- **Un seul** `requirements.txt` consolidé à la racine.
+- Les `requirements*.txt` historiques sont déplacés vers `attached_assets/legacy_requirements/`.

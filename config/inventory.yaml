@@ -1,0 +1,43 @@
+streams:
+  - id: "A"
+    label: "Stream A"
+    projects:
+      - id: "P1"
+        zones:
+          - id: "raw"
+            datasets:
+              - alias: sales_2024
+                name: "sales_2024.csv"
+                source: { kind: local, path: "sourcing/input/sales_2024.csv" }
+              - alias: customers
+                name: "customers.parquet"
+                source: { kind: local, path: "sourcing/input/customers.parquet" }
+          - id: "trusted"
+            datasets:
+              - alias: sales_agg
+                name: "sales_agg.csv"
+                source: { kind: local, path: "sourcing/input/sales_agg.csv" }
+      - id: "P2"
+        zones:
+          - id: "raw"
+            datasets:
+              - alias: refunds
+                name: "refunds.csv"
+                source: { kind: local, path: "sourcing/input/refunds.csv" }
+  - id: "B"
+    label: "Stream B"
+    projects:
+      - id: "P1"
+        zones:
+          - id: "raw"
+            datasets:
+              - alias: sales_2024
+                name: "sales_2024_alt.csv"
+                source: { kind: local, path: "sourcing/input/sales_2024_alt.csv" }
+      - id: "P3"
+        zones:
+          - id: "sandbox"
+            datasets:
+              - alias: tmp_join_check
+                name: "tmp_join_check.csv"
+                source: { kind: local, path: "sourcing/input/tmp_join_check.csv" }
