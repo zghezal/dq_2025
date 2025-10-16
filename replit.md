@@ -22,6 +22,11 @@ The business vision behind DQ Builder is to provide a user-friendly, efficient t
 
 ### UI/UX Decisions
 The application utilizes `dash-bootstrap-components` for a responsive and modern user interface. Key UI/UX decisions include:
+- **Simplified Navigation Bar**: Minimal navigation with only essential elements:
+  - **Portal STDA** branding/home link
+  - **Home** link
+  - **👤 Profile** link
+  - **❓ Help** button for assistance
 - **Dual Access System**: Two distinct entry points on the home page:
   - **Check&Drop**: Limited access for providers to deposit datasets and run DQ checks
   - **DQ Management**: Full access for DQ developers with all features (Inventory, Builder, Runner, Drop&DQ)
@@ -65,6 +70,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
 ## Recent Changes (October 16, 2025)
+- **Simplified Navigation**: Reduced navbar to essential elements only (Home, Profile, Help button)
 - **Simplified Metric/Test Types**: Removed all non-functional metric and test types, keeping only `range` for both metrics and tests
 - **Fixed Multi-Column Selection**: Corrected the handling of multi-column dropdown to properly preserve all selected columns in JSON output
 - **Cleaned Codebase**: Removed all references to unused types (null_rate, uniqueness, regex, foreign_key) from layouts, callbacks, and utilities
