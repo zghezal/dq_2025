@@ -1,7 +1,7 @@
 # DQ Builder — Data Quality Management App
 
 ## Overview
-DQ Builder is a Dash-based web application designed for comprehensive Data Quality (DQ) configuration management. Its primary purpose is to empower users to define, configure, and publish data quality metrics and tests for various datasets. The application streamlines the process of ensuring data integrity by allowing users to select and configure datasets with aliases, define various metric types (e.g., `row_count`, `sum`, `mean`), create diverse data quality tests (e.g., `null_rate`, `uniqueness`, `foreign_key`), and then preview and publish these configurations in either JSON or YAML format.
+DQ Builder is a Dash-based web application designed for comprehensive Data Quality (DQ) configuration management. Its primary purpose is to empower users to define, configure, and publish data quality metrics and tests for various datasets. The application streamlines the process of ensuring data integrity by allowing users to select and configure datasets with aliases, define **Range** metrics with multi-column support, create **Range** tests with min/max validation, and then preview and publish these configurations in either JSON or YAML format.
 
 The business vision behind DQ Builder is to provide a user-friendly, efficient tool for data stewards and analysts to proactively manage data quality, reduce data-related errors, and improve decision-making based on reliable data. It aims to simplify a complex process, making advanced DQ configurations accessible without deep technical expertise.
 
@@ -44,22 +44,31 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - Build (`/build`), DQ Inventory (`/dq-inventory`), Runner (`/dq-runner`), Drop&DQ (`/drop-dq`), and Configurations (`/configs`) pages
 - **Dynamic URL Handling**: Uses URL query parameters to pass context (stream, project, DQ point) between pages and decode them via `urlparse.unquote()`.
 - **Unique ID Generation**: Automatic generation of unique IDs for metrics (M-001, M-002...) and tests (T-001, T-002...).
-- **CRUD Operations**: Full Create, Read, Update, Delete (CRUD) support for metrics and tests, including cascade deletion for metrics affecting associated foreign_key tests.
+- **CRUD Operations**: Full Create, Read, Update, Delete (CRUD) support for metrics and tests with unique ID auto-generation.
 - **Local Development Stub**: `dataiku_stub.py` provides a local simulation of the Dataiku API for standalone development and testing.
 
 ### Feature Specifications
 - **Dataset Management**: Selection of datasets and assignment of aliases. Currently supports local CSV files from `./datasets/`.
-- **Metric Types**: `row_count`, `sum`, `mean`, `distinct_count`, `ratio`.
-- **Test Types**: `null_rate`, `uniqueness`, `range`, `regex`, `foreign_key`.
+- **Metric Type (Simplified)**: 
+  - **Range**: Only metric type available, supports multi-column selection for range-based data quality metrics
+- **Test Type (Simplified)**: 
+  - **Range**: Only test type available, validates that values fall within a defined min/max range
 - **Test Data Sources**: Tests can be configured to run on either database columns (traditional approach) or on metrics (advanced feature). Radio button interface allows users to switch between these two modes, with appropriate input fields displayed conditionally.
+- **Multi-Column Support**: Both metrics and tests support selecting multiple columns simultaneously, displayed as arrays in JSON output
 - **Configuration Publication**: Ability to save defined DQ configurations to managed folders in JSON or YAML format.
 - **Configuration Visualization**: A dedicated page to browse, display in tabular format, and view full details (via modal) of stored configurations.
-- **Inline Documentation**: Integrated help modals for all metric and test types with examples and parameter explanations.
+- **Inline Documentation**: Integrated help modals for Range metric and test types with examples and parameter explanations.
 - **DQ Management Actions**: Full CRUD operations on published configurations:
   - **Modifier**: Redirects to Build page with configuration pre-loaded for editing
   - **Dupliquer**: Creates a copy of the configuration with auto-generated timestamped name
   - **Renommer**: Modal-based renaming with validation to prevent filename conflicts
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
+
+## Recent Changes (October 16, 2025)
+- **Simplified Metric/Test Types**: Removed all non-functional metric and test types, keeping only `range` for both metrics and tests
+- **Fixed Multi-Column Selection**: Corrected the handling of multi-column dropdown to properly preserve all selected columns in JSON output
+- **Cleaned Codebase**: Removed all references to unused types (null_rate, uniqueness, regex, foreign_key) from layouts, callbacks, and utilities
+- **Updated Documentation**: Help modals now accurately reflect only the available Range metric and test types
 
 ## External Dependencies
 - **dash**: The primary web application framework.

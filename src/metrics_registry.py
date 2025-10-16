@@ -12,10 +12,10 @@ une entrée ici et l'UI pourra lister le type.
 from typing import List, Dict
 
 METRICS: Dict[str, Dict] = {
-    "missing_rate": {
-        "name": "Missing_rate",
+    "range": {
+        "name": "Range",
         "type": "metric",
-        "description": "Taux de valeurs manquantes",
+        "description": "Métrique de plage de valeurs",
         "requires_column": True,
         "params": [
             {
@@ -31,7 +31,7 @@ METRICS: Dict[str, Dict] = {
                 "label": "Colonnes",
                 "required": True,
                 "multi": True,
-                "description": "Colonnes sur lesquelles calculer le taux de valeurs manquantes"
+                "description": "Colonnes sur lesquelles calculer la plage"
             }
         ],
     }

@@ -693,7 +693,7 @@ def register_build_callbacks(app):
             ])
         ], className="mb-3")
 
-        if test_type in ("null_rate", "uniqueness", "range", "regex"):
+        if test_type == "range":
             metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
             
             # Groupe 2: Choix du type de source
@@ -819,90 +819,6 @@ def register_build_callbacks(app):
             
             return html.Div([id_card, target_card, params_card, threshold_card, preview])
 
-        if test_type == "foreign_key":
-            metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
-            ref_options = (
-                [{"label": f"📊 {mid}", "value": f"metric:{mid}"} for mid in metric_ids] +
-                [{"label": f"🗄️ {a}", "value": f"db:{a}"} for a in ds_aliases]
-            )
-            
-            # Groupe 2: Colonne source
-            source_card = dbc.Card([
-                dbc.CardHeader("🎯 Colonne source"),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.Label("Base de données (alias)"),
-                            dcc.Dropdown(
-                                id={"role": "test-db"},
-                                options=[{"label": a, "value": a} for a in ds_aliases],
-                                value=ds_aliases[0] if ds_aliases else None,
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6),
-                        dbc.Col([
-                            html.Label("Colonne"),
-                            dcc.Dropdown(
-                                id={"role": "test-col"},
-                                options=[],
-                                placeholder="Choisir une colonne",
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6)
-                    ])
-                ])
-            ], className="mb-3")
-            
-            # Groupe 3: Référence
-            ref_card = dbc.Card([
-                dbc.CardHeader("🔗 Référence (Foreign Key)"),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.Label("Référence (Base ou Métrique)"),
-                            html.Div("Sélectionne une base de données 🗄️ ou une métrique 📊", className="text-muted small mb-1"),
-                            dcc.Dropdown(
-                                id={"role": "test-ref-db"},
-                                options=ref_options,
-                                placeholder="Base ou métrique...",
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6),
-                        dbc.Col([
-                            html.Label("Colonne de référence"),
-                            html.Div(id="fk-ref-col-helper", className="text-muted small mb-1"),
-                            dcc.Dropdown(
-                                id={"role": "test-ref-col"},
-                                options=[],
-                                placeholder="Choisir une colonne",
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6)
-                    ])
-                ])
-            ], className="mb-3")
-            
-            # Prévisualisation
-            preview = dbc.Card([
-                dbc.CardHeader("👁️ Prévisualisation"),
-                dbc.CardBody([
-                    html.Pre(
-                        id={"role": "test-preview"},
-                        style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
-                    )
-                ])
-            ])
-            
-            return html.Div([id_card, source_card, ref_card, preview])
-
         return dbc.Alert("Type non géré pour l'instant.", color="warning")
 
     @app.callback(
@@ -980,38 +896,6 @@ def register_build_callbacks(app):
         return opts, False, ""
 
     @app.callback(
-        Output({"role": "test-ref-col"}, "options"),
-        Output({"role": "test-ref-col"}, "disabled"),
-        Output("fk-ref-col-helper", "children"),
-        Input({"role": "test-ref-db"}, "value", ALL),
-        State("store_datasets", "data"),
-        prevent_initial_call=True
-    )
-    def fill_test_ref_columns(ref_values, ds_data):
-        """Remplit les options de colonnes de référence pour un test foreign_key"""
-        ref_value = first(ref_values)
-        if not ref_value:
-            return [], True, ""
-        
-        if ref_value.startswith("metric:"):
-            return [], True, "Les métriques n'ont pas de colonnes (valeur unique)"
-        
-        if ref_value.startswith("db:"):
-            db_alias = ref_value[3:]
-            if not ds_data:
-                return [], True, ""
-            ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
-            if not ds_name:
-                return [], True, f"Dataset introuvable pour l'alias « {db_alias} »"
-            cols = get_columns_for_dataset(ds_name)
-            if not cols:
-                return [], True, f"Aucune colonne pour « {ds_name} »"
-            opts = [{"label": c, "value": c} for c in cols]
-            return opts, False, f"{len(opts)} colonne(s) disponibles"
-        
-        return [], True, ""
-
-    @app.callback(
         Output({"role": "test-preview"}, "children"),
         Output("toast", "is_open", allow_duplicate=True),
         Output("toast", "children", allow_duplicate=True),
@@ -1065,27 +949,16 @@ def register_build_callbacks(app):
             "severity": (sev or "medium"),
             "sample_on_fail": ("yes" in (sof or []))
         }
-        if ttype in ("null_rate", "uniqueness", "range", "regex"):
+        if ttype == "range":
             # Si une métrique est sélectionnée, utiliser la métrique
             if metric:
                 obj.update({"metric": metric})
             else:
                 obj.update({"database": db or "", "column": col or ""})
             
-            if ttype == "range":
-                obj.update({"min": vmin, "max": vmax})
-            if ttype == "regex":
-                obj.update({"pattern": pat})
+            obj.update({"min": vmin, "max": vmax})
             if op and thr is not None:
                 obj["threshold"] = {"op": op, "value": thr}
-        elif ttype == "foreign_key":
-            obj.update({"database": db or "", "column": col or ""})
-            if refdb and refdb.startswith("metric:"):
-                obj["ref"] = {"metric": refdb[7:]}
-            elif refdb and refdb.startswith("db:"):
-                obj["ref"] = {"database": refdb[3:], "column": refcol or ""}
-            else:
-                obj["ref"] = {"database": refdb or "", "column": refcol or ""}
         # If tid provided, check whether it's already used
         if tid:
             existing_ids = {x.get("id") for x in (tests or []) if x.get("id")}
@@ -1155,27 +1028,16 @@ def register_build_callbacks(app):
                     t["id"] = f"T-{tnum:03d}"
                 except Exception:
                     t["id"] = None
-            if ttype in ("null_rate", "uniqueness", "range", "regex"):
+            if ttype == "range":
                 # Si une métrique est sélectionnée, utiliser la métrique
                 if metric:
                     t.update({"metric": metric})
                 else:
                     t.update({"database": db or "", "column": col or ""})
                 
-                if ttype == "range":
-                    t.update({"min": vmin, "max": vmax})
-                if ttype == "regex":
-                    t.update({"pattern": pat})
+                t.update({"min": vmin, "max": vmax})
                 if op and thr is not None:
                     t["threshold"] = {"op": op, "value": thr}
-            elif ttype == "foreign_key":
-                t.update({"database": db or "", "column": col or ""})
-                if refdb and refdb.startswith("metric:"):
-                    t["ref"] = {"metric": refdb[7:]}
-                elif refdb and refdb.startswith("db:"):
-                    t["ref"] = {"database": refdb[3:], "column": refcol or ""}
-                else:
-                    t["ref"] = {"database": refdb or "", "column": refcol or ""}
         
         tests = (tests or [])
         existing_ids = {x.get("id") for x in tests}
@@ -1479,25 +1341,11 @@ def register_build_callbacks(app):
         # Supprimer la métrique
         new_metrics = [m for i, m in enumerate(metrics) if i != clicked_idx]
         
-        # Supprimer les tests qui référencent cette métrique
+        # Aucun test ne référence les métriques dans le type "range"
         new_tests = tests or []
-        deleted_tests = []
-        if metric_id and tests:
-            filtered_tests = []
-            for t in tests:
-                # Vérifier si le test référence cette métrique
-                if t.get("type") == "foreign_key":
-                    ref = t.get("ref", {})
-                    if ref.get("metric") == metric_id:
-                        deleted_tests.append(t.get("id"))
-                        continue
-                filtered_tests.append(t)
-            new_tests = filtered_tests
         
         # Message de statut
         status_msg = f"✅ Métrique '{metric_id}' supprimée."
-        if deleted_tests:
-            status_msg += f" {len(deleted_tests)} test(s) associé(s) supprimé(s): {', '.join(deleted_tests)}"
         
         return new_metrics, new_tests, dbc.Alert(status_msg, color="success", dismissable=True, duration=4000)
     

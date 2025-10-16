@@ -240,7 +240,7 @@ def sanitize_metric(m: dict) -> dict:
     """
     if not isinstance(m, dict):
         return {}
-    allowed_types = {"row_count", "sum", "mean", "distinct_count", "ratio", "missing_rate"}
+    allowed_types = {"range"}
     out = {
         "id": m.get("id") or None,
         "type": (m.get("type") if m.get("type") in allowed_types else (m.get("type") or "unknown")),
@@ -260,7 +260,7 @@ def sanitize_test(t: dict) -> dict:
     """
     if not isinstance(t, dict):
         return {}
-    allowed_types = {"null_rate", "uniqueness", "range", "regex", "foreign_key"}
+    allowed_types = {"range"}
     out = {
         "id": t.get("id") or None,
         "type": (t.get("type") if t.get("type") in allowed_types else (t.get("type") or "unknown")),

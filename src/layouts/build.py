@@ -96,11 +96,7 @@ def build_page():
                                     dcc.Dropdown(
                                         id="test-type",
                                         options=[
-                                            {"label": "null_rate", "value": "null_rate"},
-                                            {"label": "uniqueness", "value": "uniqueness"},
-                                            {"label": "range", "value": "range"},
-                                            {"label": "regex", "value": "regex"},
-                                            {"label": "foreign_key", "value": "foreign_key"}
+                                            {"label": "range", "value": "range"}
                                         ],
                                         placeholder="Choisir le type",
                                         clearable=False,
@@ -188,50 +184,15 @@ def build_page():
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle("📊 Documentation des Métriques")),
             dbc.ModalBody([
-                html.H6("Types de métriques disponibles :", className="mb-3"),
+                html.H6("Type de métrique disponible :", className="mb-3"),
                 
                 html.Div([
-                    html.H6("🔢 row_count", className="text-primary"),
-                    html.P("Compte le nombre total de lignes dans un dataset."),
+                    html.H6("📏 Range", className="text-primary"),
+                    html.P("Métrique de plage de valeurs pour une ou plusieurs colonnes."),
                     html.Ul([
-                        html.Li("Paramètres : database (alias du dataset)"),
+                        html.Li("Paramètres : dataset (alias), colonnes (une ou plusieurs)"),
+                        html.Li("Supporte la multi-sélection de colonnes"),
                         html.Li("Optionnel : where (clause de filtrage)"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("➕ sum", className="text-primary"),
-                    html.P("Calcule la somme d'une colonne numérique."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li("Optionnel : where (clause de filtrage)"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("📊 mean", className="text-primary"),
-                    html.P("Calcule la moyenne d'une colonne numérique."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li("Optionnel : where (clause de filtrage)"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("🔍 distinct_count", className="text-primary"),
-                    html.P("Compte le nombre de valeurs distinctes dans une colonne."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li("Optionnel : where (clause de filtrage)"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("➗ ratio", className="text-primary"),
-                    html.P("Calcule le rapport entre deux métriques (metricA / metricB)."),
-                    html.Ul([
-                        html.Li("Paramètres : expr (expression, ex: M-001/M-002)"),
-                        html.Li("Utilise les IDs d'autres métriques déjà créées"),
                     ]),
                 ], className="mb-3"),
             ]),
@@ -244,57 +205,16 @@ def build_page():
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle("✅ Documentation des Tests")),
             dbc.ModalBody([
-                html.H6("Types de tests disponibles :", className="mb-3"),
+                html.H6("Type de test disponible :", className="mb-3"),
                 
                 html.Div([
-                    html.H6("🚫 null_rate", className="text-primary"),
-                    html.P("Vérifie le taux de valeurs nulles dans une colonne."),
+                    html.H6("📏 Range", className="text-primary"),
+                    html.P("Vérifie que les valeurs sont dans une plage définie (min, max)."),
                     html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li("Seuil : op (<=, >=, etc.) et value (ex: 0.05 pour 5%)"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("🔑 uniqueness", className="text-primary"),
-                    html.P("Vérifie l'unicité des valeurs dans une colonne."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li("Seuil : op et value pour le taux d'unicité attendu"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("📏 range", className="text-primary"),
-                    html.P("Vérifie que les valeurs sont dans une plage définie."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column, min, max"),
-                        html.Li("Optionnel : seuil pour tolérance"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("🔤 regex", className="text-primary"),
-                    html.P("Vérifie que les valeurs respectent un motif regex."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column, pattern"),
-                        html.Li("Optionnel : seuil pour tolérance"),
-                    ]),
-                ], className="mb-3"),
-                
-                html.Div([
-                    html.H6("🔗 foreign_key", className="text-primary"),
-                    html.P("Vérifie l'intégrité référentielle (clé étrangère)."),
-                    html.Ul([
-                        html.Li("Paramètres : database, column"),
-                        html.Li([
-                            "Référence : ",
-                            html.Ul([
-                                html.Li("📊 Métrique : Sélectionnez une métrique existante (ex: M-001)"),
-                                html.Li("📁 Dataset : Sélectionnez un dataset et une colonne"),
-                            ])
-                        ]),
-                        html.Li(html.Strong("💡 Les tests peuvent se baser sur des métriques !", className="text-success")),
+                        html.Li("Peut se baser sur : une colonne de database OU une métrique"),
+                        html.Li("Paramètres : min (valeur minimale), max (valeur maximale)"),
+                        html.Li("Optionnel : seuil pour tolérance (op et value)"),
+                        html.Li("💡 Choisissez 'Database' pour tester une colonne directe ou 'Métrique' pour tester une métrique calculée"),
                     ]),
                 ], className="mb-3"),
             ]),
