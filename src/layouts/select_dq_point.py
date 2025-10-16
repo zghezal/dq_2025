@@ -16,10 +16,10 @@ def select_dq_point_page():
         html.Div(id="select-dq-status", className="mt-2"),
 
         # Stores pour datasets, metrics, tests (requis par les callbacks globaux)
-        dcc.Store(id="inventory-datasets-store", storage_type="memory"),
-        dcc.Store(id="store_datasets", storage_type="memory"),
-        dcc.Store(id="store_metrics", storage_type="memory"),
-        dcc.Store(id="store_tests", storage_type="memory"),
+        dcc.Store(id="inventory-datasets-store", storage_type="session"),
+        dcc.Store(id="store_datasets", storage_type="session"),
+        dcc.Store(id="store_metrics", storage_type="session"),
+        dcc.Store(id="store_tests", storage_type="session"),
         
         # Éléments cachés requis par les callbacks globaux de build
         html.Div(id="ds-picker", style={"display": "none"}),

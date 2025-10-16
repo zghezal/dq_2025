@@ -15,6 +15,7 @@ def build_page():
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
         dcc.Store(id="store_edit_metric", storage_type="session"),
+        dcc.Store(id="inventory-datasets-store", storage_type="session"),
 
         dbc.Tabs([
             # Onglet 1: Datasets
