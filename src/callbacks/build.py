@@ -205,11 +205,7 @@ def register_build_callbacks(app):
         if not metric_type:
             return dbc.Alert("Choisis un type de métrique.", color="light")
         ds_aliases = [d["alias"] for d in (ds_data or [])]
-        if not ds_aliases:
-            return dbc.Alert(
-                "Enregistre d'abord des datasets (Étape 1), puis reviens ici.",
-                color="warning"
-            )
+        # Si pas de datasets dans le store, on continue quand même (auto-chargement en cours)
 
     # Groupe 1: Identification
         id_card = dbc.Card([
