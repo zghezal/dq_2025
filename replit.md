@@ -8,8 +8,8 @@ The business vision behind DQ Builder is to provide a user-friendly, efficient t
 **Builder Navigation Flow**: All Builder access points (navbar, dashboards, buttons) redirect to a 3-step selection wizard:
 1. `/select-stream` - Select data Stream
 2. `/select-project` - Select Project (filtered by stream)
-3. `/select-dq-point` - Select DQ Point (Extraction/Transformation/Chargement)
-4. `/build` - Configuration page with context parameters in URL
+3. `/select-dq-point` - Select Zone (raw/trusted/sandbox from inventory)
+4. `/build` - Configuration page with context parameters in URL (?stream=X&project=X&zone=X)
 
 ## User Preferences
 - I prefer clear, concise explanations and direct answers.
@@ -47,7 +47,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - Check&Drop Dashboard (`/check-drop-dashboard`) with limited features
   - DQ Management Dashboard (`/dq-management-dashboard`) with full access
   - Build (`/build`), DQ Inventory (`/dq-inventory`), Runner (`/dq-runner`), Drop&DQ (`/drop-dq`), and Configurations (`/configs`) pages
-- **Dynamic URL Handling**: Uses URL query parameters to pass context (stream, project, DQ point) between pages and decode them via `urlparse.unquote()`.
+- **Dynamic URL Handling**: Uses URL query parameters to pass context (stream, project, zone) between pages and decode them via `urlparse.unquote()`.
 - **Unique ID Generation**: Automatic generation of unique IDs for metrics (M-001, M-002...) and tests (T-001, T-002...).
 - **CRUD Operations**: Full Create, Read, Update, Delete (CRUD) support for metrics and tests with unique ID auto-generation.
 - **Local Development Stub**: `dataiku_stub.py` provides a local simulation of the Dataiku API for standalone development and testing.
@@ -70,10 +70,27 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
 ## Recent Changes (October 16, 2025)
+
+### **Architecture Refactoring: DQ Points → Zones**
+- **Replaced DQ Point abstraction** with direct zone selection from inventory:
+  - **Before**: Step 3 = DQ Point (Extraction/Transformation/Chargement) with hardcoded mapping to zones
+  - **After**: Step 3 = Zone (raw/trusted/sandbox) directly from `config/inventory.yaml`
+- **New Inventory Functions** (`src/inventory.py`):
+  - `get_zones(stream_id, project_id)` → Returns available zones with dataset counts
+  - `get_datasets_for_zone(zone_id, stream_id, project_id)` → Returns datasets for a specific zone
+- **Updated Page Layout** (`src/layouts/select_dq_point.py`):
+  - Renamed from "Choisir le DQ Point" to "Choisir la Zone"
+  - Dynamic zone dropdown populated based on stream/project context
+  - Added required stores (store_datasets, inventory-datasets-store)
+- **Updated Navigation** (`src/callbacks/navigation.py`):
+  - URL parameters changed from `?dq_point=X` to `?zone=X`
+  - Callbacks now use zone-based filtering instead of DQ Point mapping
+  - Datasets automatically loaded when zone is selected
+
+### **Earlier Changes**
 - **Dynamic Inventory Loading**: Modified `src/config.py` to dynamically load streams, projects, and datasets from `config/inventory.yaml` instead of using hardcoded test data
   - Now loads real data: Stream A (P1, P2) and Stream B (P1, P3)
   - Datasets loaded from `sourcing/input/` directory
-  - Automatic mapping of DQ Points (Extraction→raw, Transformation/Chargement→trusted)
 - **Simplified Navigation**: Reduced navbar to essential elements only (Home, Profile, Help button)
 - **Simplified Metric/Test Types**: Removed all non-functional metric and test types, keeping only `range` for both metrics and tests
 - **Fixed Multi-Column Selection**: Corrected the handling of multi-column dropdown to properly preserve all selected columns in JSON output
