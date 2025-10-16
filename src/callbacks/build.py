@@ -124,11 +124,14 @@ def register_build_callbacks(app):
         return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
-        Output("ds-picker", "options"), 
-        Input("url", "search")
+        Output("ds-picker", "options"),
+        Output("store_datasets", "data", allow_duplicate=True),
+        Input("url", "search"),
+        State("store_datasets", "data"),
+        prevent_initial_call='initial_duplicate'
     )
-    def update_dataset_options(search):
-        """Met à jour les datasets disponibles selon le contexte"""
+    def update_dataset_options(search, current_data):
+        """Met à jour les datasets disponibles selon le contexte et auto-charge le store"""
         q = parse_query(search) if search else {}
         
         stream = q.get("stream")
@@ -136,7 +139,14 @@ def register_build_callbacks(app):
         dq_point = q.get("dq_point")
         
         datasets = list_project_datasets(stream, projet, dq_point)
-        return [{"label": ds, "value": ds} for ds in datasets]
+        options = [{"label": ds, "value": ds} for ds in datasets]
+        
+        # Auto-charger les datasets dans le store s'il est vide et qu'on a un contexte
+        if not current_data and stream and projet and dq_point and datasets:
+            auto_data = [{"alias": ds.lower(), "dataset": ds} for ds in datasets]
+            return options, auto_data
+        
+        return options, current_data or no_update
 
     @app.callback(
         Output("alias-mapper", "children"),
