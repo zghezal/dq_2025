@@ -171,7 +171,7 @@ def register_navigation_callbacks(app):
     @app.callback(
         Output("datasets-checklist", "options"),
         Output("inventory-datasets-store", "data"),
-        Output("store_datasets", "data"),
+        Output("store_datasets", "data", allow_duplicate=True),
         Input("select-dq-point-dropdown", "value"),
         State("url", "search"),
         prevent_initial_call=True
