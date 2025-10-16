@@ -6,6 +6,7 @@ from datetime import datetime
 from dash import html, dcc, Input, Output, State, ALL, no_update
 import dash_bootstrap_components as dbc
 import yaml
+import re
 
 try:
     import dataiku
@@ -18,8 +19,14 @@ from src.utils import (
     safe_id,
     cfg_template,
     parse_query,
-    first
+    first,
+    sanitize_metrics,
+    sanitize_tests,
+    validate_cfg
 )
+from src.metrics_registry import get_metric_options, get_metric_meta
+from src.dq_runner import run_dq_config
+import pandas as pd
 
 
 def register_build_callbacks(app):
@@ -81,8 +88,9 @@ def register_build_callbacks(app):
             if config:
                 # Extraire les données pour chaque store
                 datasets = config.get("databases", [])
-                metrics = config.get("metrics", [])
-                tests = config.get("tests", [])
+                # sanitize incoming metrics/tests
+                metrics = sanitize_metrics(config.get("metrics", []) or [])
+                tests = sanitize_tests(config.get("tests", []) or [])
                 
                 print(f"DEBUG: Config chargée - {len(datasets)} datasets, {len(metrics)} métriques, {len(tests)} tests")
                 
@@ -193,7 +201,7 @@ def register_build_callbacks(app):
                 color="warning"
             )
 
-        # Groupe 1: Identification
+    # Groupe 1: Identification
         id_card = dbc.Card([
             dbc.CardHeader("📝 Identification"),
             dbc.CardBody([
@@ -202,21 +210,25 @@ def register_build_callbacks(app):
                         html.Label("ID de la métrique"),
                         dcc.Input(
                             id={"role": "metric-id"},
-                            type="text",
-                            value="",
-                            placeholder="Ex: M-001 (généré automatiquement si vide)",
+                            type="number",
+                            value=None,
+                            placeholder="Entrez un numéro (ex: 1 pour M-001) ou laissez vide",
                             style={"width": "100%"},
                             persistence=True,
-                            persistence_type="session"
+                            persistence_type="session",
+                            min=1
                         ),
-                        html.Small("Laissez vide pour auto-générer M-XXX", className="text-muted")
+                        html.Small("Saisis seulement le numéro. Préfixe 'M-' sera ajouté automatiquement.", className="text-muted")
                     ], md=12)
                 ])
             ])
         ], className="mb-3")
 
-        # Groupe 2: Configuration Dataset
-        column_visible = metric_type in ("sum", "mean", "distinct_count")
+        # Groupe 2: Configuration Dataset (render fields according to metric meta)
+        meta = get_metric_meta(metric_type)
+        column_visible = meta.get("requires_column", False)
+        db_visible = meta.get("requires_database", True)
+
         dataset_card = dbc.Card([
             dbc.CardHeader("🗄️ Configuration Dataset"),
             dbc.CardBody([
@@ -229,13 +241,14 @@ def register_build_callbacks(app):
                             value=ds_aliases[0] if ds_aliases else None,
                             clearable=False,
                             persistence=True,
-                            persistence_type="session"
+                            persistence_type="session",
+                            style={"display": "block" if db_visible else "none"}
                         )
                     ], md=6),
                     dbc.Col([
                         html.Label("Colonne", style={"display": "block" if column_visible else "none"}),
                         dcc.Dropdown(
-                            id={"role": "metric-column"},
+                            id={"role": "metric-column", "form": "metric"},
                             options=[],
                             placeholder="Choisir une colonne",
                             clearable=False,
@@ -251,57 +264,61 @@ def register_build_callbacks(app):
         ], className="mb-3")
 
         # Groupe 3: Filtres et Options
+        # Groupe 3: Filtres et Options (build from meta.params)
         extras_content = []
-        if metric_type == "row_count":
-            extras_content = [
-                html.Label("Filtre WHERE (optionnel)"),
-                dcc.Input(
-                    id={"role": "metric-where"},
+        params = meta.get("params", []) if meta else []
+        for p in params:
+            # support params declared as strings in the registry (legacy) or as dicts
+            if isinstance(p, str):
+                p = {"name": p, "label": p, "type": "text"}
+            p_name = p.get("name")
+            p_label = p.get("label") or p_name
+            p_type = p.get("type") or "text"
+            # text param: simple input
+            if p_type == "text":
+                extras_content.append(html.Label(p_label))
+                extras_content.append(dcc.Input(
+                    id={"role": f"metric-param", "name": p_name},
                     type="text",
-                    value="",
-                    placeholder="Ex: column_name > 100",
+                    value=p.get("default", ""),
+                    placeholder=p.get("placeholder", ""),
                     style={"width": "100%"},
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                ),
-                html.Small("Spécifiez une condition SQL pour filtrer les lignes", className="text-muted")
-            ]
-        elif metric_type in ("sum", "mean"):
-            extras_content = [
-                html.Label("Filtre WHERE (optionnel)"),
-                dcc.Input(
-                    id={"role": "metric-where"},
-                    type="text",
-                    value="",
-                    placeholder="Ex: status = 'active'",
-                    style={"width": "100%"},
+                ))
+                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
+            # dataset param: dropdown of aliases
+            elif p_type == "dataset":
+                extras_content.append(html.Label(p_label))
+                extras_content.append(dcc.Dropdown(
+                    id={"role": "metric-param", "name": p_name},
+                    options=[{"label": a, "value": a} for a in ds_aliases],
+                    value=ds_aliases[0] if ds_aliases else None,
+                    clearable=False,
                     persistence=True,
                     persistence_type="session",
-                    autoComplete="off"
-                ),
-                html.Small("Spécifiez une condition SQL pour filtrer les lignes", className="text-muted")
-            ]
-        elif metric_type == "ratio":
-            extras_content = [
-                html.Label("Expression (metricA / metricB)"),
-                dcc.Input(
-                    id={"role": "metric-expr"},
-                    type="text",
-                    value="",
-                    placeholder="Ex: metric_sum_total / metric_count_total",
-                    style={"width": "100%"},
+                    placeholder=p.get("placeholder", "Sélectionne une base"),
+                ))
+                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
+            # columns param: dropdown populated dynamically (multi if requested)
+            elif p_type == "columns":
+                extras_content.append(html.Label(p_label))
+                extras_content.append(dcc.Dropdown(
+                    id={"role": "metric-param", "name": p_name},
+                    options=[],
+                    multi=p.get("multi", False),
+                    placeholder=p.get("placeholder", "Choisir une ou plusieurs colonnes"),
                     persistence=True,
                     persistence_type="session",
-                    autoComplete="off"
-                ),
-                html.Small("Utilisez les IDs de métriques déjà définies", className="text-muted")
-            ]
-        
+                    clearable=False
+                ))
+                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
+
         options_card = dbc.Card([
             dbc.CardHeader("⚙️ Filtres et Options"),
             dbc.CardBody(extras_content if extras_content else [html.P("Aucune option pour ce type de métrique", className="text-muted")])
-        ], className="mb-3") if metric_type != "distinct_count" else html.Div()
+        ], className="mb-3") if params else html.Div()
 
         # Prévisualisation
         preview = dbc.Card([
@@ -317,7 +334,7 @@ def register_build_callbacks(app):
         return html.Div([id_card, dataset_card, options_card, preview])
 
     @app.callback(
-        Output({"role": "metric-column"}, "options"),
+        Output({"role": "metric-column", "form": "metric"}, "options"),
         Output("toast", "is_open", allow_duplicate=True),
         Output("toast", "children", allow_duplicate=True),
         Input({"role": "metric-db"}, "value", ALL),
@@ -327,20 +344,88 @@ def register_build_callbacks(app):
     def fill_metric_columns(db_values, ds_data):
         """Remplit les options de colonnes pour une métrique selon la base sélectionnée"""
         db_alias = first(db_values)
-        if not db_alias or not ds_data:
-            return [], False, ""
-        ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
+        print(f"DEBUG fill_metric_columns: db_values={db_values}, ds_data_present={bool(ds_data)}")
+        # Prefer mapping via store_datasets when available
+        ds_name = None
+        if ds_data:
+            ds_name = next((d["dataset"] for d in ds_data if d["alias"] == db_alias), None)
+
+        # Fallback: if no mapping, try to use the alias/db value as dataset name or use ds-picker
         if not ds_name:
-            return [], True, f"Aucun dataset associé à l'alias « {db_alias} »."
+            try:
+                from src.utils import first as _first
+            except Exception:
+                _first = lambda x: x[0] if isinstance(x, list) and x else None
+            # try direct alias as dataset name
+            ds_name = db_alias
+            # If still None, return empty options
+            if not ds_name:
+                return [], False, ""
+
+        # Try to read columns; if not found, attempt to locate a csv filename that matches
         cols = get_columns_for_dataset(ds_name)
+        if not cols:
+            # try to search datasets folder for a matching filename (best-effort)
+            try:
+                import os
+                candidates = [f for f in os.listdir("./datasets") if f.lower().startswith(str(ds_name).lower())]
+                if candidates:
+                    # pick first candidate without extension
+                    fname = candidates[0]
+                    base = os.path.splitext(fname)[0]
+                    cols = get_columns_for_dataset(base)
+            except Exception:
+                cols = []
+        print(f"DEBUG fill_metric_columns: ds_name={ds_name}, cols_found={len(cols) if cols else 0}")
+
         if not cols:
             return [], True, f"Aucune colonne lisible pour « {ds_name} ». Vérifie le CSV."
         opts = [{"label": c, "value": c} for c in cols]
         return opts, False, ""
 
+
+    @app.callback(
+        Output({"role": "metric-param", "name": ALL}, "options"),
+        Input({"role": "metric-db"}, "value", ALL),
+        Input({"role": "metric-param", "name": ALL}, "value"),
+        State("store_datasets", "data"),
+        prevent_initial_call=True
+    )
+    def fill_param_columns(db_values, param_values, ds_data):
+        """Remplit les options de tout param 'columns' déclarés en metric-param en fonction du dataset sélectionné
+        Retourne une liste d'options (ou []) correspondant à chaque metric-param présent dans le DOM.
+        """
+        print(f"DEBUG fill_param_columns: db_values={db_values}, param_values={param_values}, ds_data_present={bool(ds_data)}")
+        # Determine selected db alias: prefer explicit param dataset if provided, else main metric-db
+        selected_db = first(param_values) or first(db_values)
+        # If no datasets stored yet or no selected db, return empty lists for all params
+        if not ds_data or not selected_db:
+            return [[] for _ in param_values]
+
+        ds_name = None
+        if ds_data:
+            ds_name = next((d["dataset"] for d in ds_data if d["alias"] == selected_db), None)
+        if not ds_name:
+            ds_name = selected_db
+
+        cols = get_columns_for_dataset(ds_name) or []
+        if not cols:
+            try:
+                import os
+                candidates = [f for f in os.listdir("./datasets") if f.lower().startswith(str(ds_name).lower())]
+                if candidates:
+                    base = os.path.splitext(candidates[0])[0]
+                    cols = get_columns_for_dataset(base) or []
+            except Exception:
+                cols = []
+        print(f"DEBUG fill_param_columns: ds_name={ds_name}, cols_found={len(cols) if cols else 0}")
+        opts = [{"label": c, "value": c} for c in cols]
+        # Replicate same options for each requested param dropdown
+        return [opts for _ in param_values]
+
     @app.callback(
         Output("metric-helper", "children"),
-        Input({"role": "metric-column"}, "options")
+        Input({"role": "metric-column", "form": "metric"}, "options")
     )
     def metric_helper(opts):
         """Affiche un message d'aide pour les colonnes de métrique"""
@@ -352,38 +437,73 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output({"role": "metric-preview"}, "children"),
+        Output("toast", "is_open", allow_duplicate=True),
+        Output("toast", "children", allow_duplicate=True),
         Input("force-metric-preview", "n_clicks"),
         Input("metric-type", "value"),
-        Input({"role": "metric-id"}, "value", ALL),
-        Input({"role": "metric-db"}, "value", ALL),
-        Input({"role": "metric-column"}, "value", ALL),
+    Input({"role": "metric-id"}, "value", ALL),
+    Input({"role": "metric-db"}, "value", ALL),
+    Input({"role": "metric-column", "form": "metric"}, "value", ALL),
         Input({"role": "metric-where"}, "value", ALL),
         Input({"role": "metric-expr"}, "value", ALL),
+        State({"role": "metric-param", "name": ALL}, "value"),
+        State("store_metrics", "data"),
         prevent_initial_call=True
     )
-    def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list):
+    def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values, metrics):
         """Génère la prévisualisation JSON de la métrique"""
         if not mtype:
-            return ""
-        
+            return "", False, ""
         mid = first(mid_list)
         mdb = first(mdb_list)
         mcol = first(mcol_list)
         mwhere = first(mwhere_list)
         mexpr = first(mexpr_list)
+        # metric params values come as a list corresponding to declared params order
+        mparams = (mparam_values or [])
 
-        obj = {"id": (mid or "M-XXX (auto)"), "type": mtype}
-        if mtype in ("row_count", "sum", "mean"):
-            obj.update({"database": mdb or ""})
-            if mtype in ("sum", "mean"):
-                obj["column"] = mcol or ""
+        # mid is now expected to be a number or None. If provided, format as M-###.
+        display_id = None
+        try:
+            if isinstance(mid, (int, float)) or (isinstance(mid, str) and mid.isdigit()):
+                num = int(mid)
+                display_id = f"M-{num:03d}"
+        except Exception:
+            display_id = None
+        obj = {"id": (display_id or "(auto)"), "type": mtype}
+        meta = get_metric_meta(mtype) or {}
+        params = meta.get("params", [])
+        # Populate known params
+        if "database" in params or meta.get("requires_database"):
+            obj["database"] = mdb or ""
+        if "column" in params or meta.get("requires_column"):
+            obj["column"] = mcol or ""
+        # Handle registered params: dataset/columns/where/expr
+        # Look for params declared in meta and pull values from the form via pattern ids
+        # Collect metric-param values from the DOM using dcc pattern ids is handled in add_metric via State
+        if params:
+            declared = [p.get('name') if isinstance(p, dict) else p for p in params]
+            for name, val in zip(declared, mparams):
+                if not name:
+                    continue
+                if name == 'columns':
+                    obj['columns'] = val or []
+                elif name == 'dataset_filter' or name == 'dataset':
+                    obj['database_filter'] = val or ''
+                else:
+                    obj[name] = val
+        if "where" in params:
             if mwhere:
                 obj["where"] = mwhere
-        elif mtype == "distinct_count":
-            obj.update({"database": mdb or "", "column": mcol or ""})
-        elif mtype == "ratio":
-            obj.update({"expr": (mexpr or "")})
-        return json.dumps(obj, ensure_ascii=False, indent=2)
+        if "expr" in params:
+            obj["expr"] = mexpr or ""
+        # If a concrete display_id was provided, check whether it already exists
+        if display_id:
+            existing_ids = {x.get("id") for x in (metrics or []) if x.get("id")}
+            if display_id in existing_ids:
+                msg = f"Le numéro {display_id} est déjà utilisé. Un ID unique sera attribué automatiquement si nécessaire."
+                return json.dumps(obj, ensure_ascii=False, indent=2), True, msg
+        return json.dumps(obj, ensure_ascii=False, indent=2), False, ""
 
     @app.callback(
         Output("add-metric-status", "children"),
@@ -394,13 +514,14 @@ def register_build_callbacks(app):
         State({"role": "metric-preview"}, "children", ALL),
         State("store_metrics", "data"),
         State("metric-type", "value"),
-        State({"role": "metric-id"}, "value", ALL),
-        State({"role": "metric-db"}, "value", ALL),
-        State({"role": "metric-column"}, "value", ALL),
+    State({"role": "metric-id"}, "value", ALL),
+    State({"role": "metric-db"}, "value", ALL),
+    State({"role": "metric-column", "form": "metric"}, "value", ALL),
         State({"role": "metric-where"}, "value", ALL),
         State({"role": "metric-expr"}, "value", ALL),
+        State({"role": "metric-param", "name": ALL}, "value"),
     )
-    def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list):
+    def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values):
         """Ajoute une métrique au store et met à jour la liste"""
         if not n:
             return "", metrics, "", no_update
@@ -413,46 +534,84 @@ def register_build_callbacks(app):
             except Exception:
                 m = None
         if m is None:
-            mid = first(mid_list)
+            mid_raw = first(mid_list)
             mdb = first(mdb_list)
             mcol = first(mcol_list)
             mwhere = first(mwhere_list)
             mexpr = first(mexpr_list)
             if not mtype:
                 return "Prévisualisation vide/invalide.", metrics, no_update, no_update
-            m = {"id": mid, "type": mtype}
-            if mtype in ("row_count", "sum", "mean"):
-                m.update({"database": mdb or ""})
-                if mtype in ("sum", "mean"):
-                    m["column"] = mcol or ""
-                if mwhere:
-                    m["where"] = mwhere
-            elif mtype == "distinct_count":
-                m.update({"database": mdb or "", "column": mcol or ""})
-            elif mtype == "ratio":
-                m.update({"expr": (mexpr or "")})
+            # Normalize ID: accept numeric (e.g. '1' -> M-001) or M-<num>; otherwise leave blank to auto-generate
+            m = {"id": None, "type": mtype}
+            # mid_raw should be numeric or None. Accept numeric strings as well.
+            if mid_raw is not None and mid_raw != "":
+                try:
+                    mnum = int(mid_raw)
+                    m["id"] = f"M-{mnum:03d}"
+                except Exception:
+                    # ignore and let auto-generate
+                    m["id"] = None
+            meta = get_metric_meta(mtype) or {}
+            params = meta.get("params", [])
+            # Generic population based on params
+            if "database" in params or meta.get("requires_database"):
+                m["database"] = mdb or ""
+            if "column" in params or meta.get("requires_column"):
+                m["column"] = mcol or ""
+            if "where" in params and mwhere:
+                m["where"] = mwhere
+            if "expr" in params:
+                m["expr"] = mexpr or ""
+            # Metric-param values: metric-param name list corresponds to mparam_values order
+            # Extract common params by name if provided
+            try:
+                # mparam_values is a list of values corresponding to each metric-param input present
+                # We need to map declared params names to provided values - assume order matches meta.params
+                declared = [p.get('name') if isinstance(p, dict) else p for p in params]
+                for name, val in zip(declared, (mparam_values or [])):
+                    if name is None:
+                        continue
+                    # columns param may be single or list
+                    if name == 'columns':
+                        m['columns'] = val or []
+                    elif name == 'dataset_filter' or name == 'dataset':
+                        # store the selected alias
+                        m['database_filter'] = val or ''
+                    else:
+                        m[name] = val
+            except Exception:
+                pass
+            # Extract metric-param values (dataset_filter, columns, etc.)
+            try:
+                # Grab all metric-param inputs present in the DOM
+                from dash import callback_context
+                ctx = callback_context
+                # state values for metric-param are not directly accessible here; instead get them from function args by adding States
+            except Exception:
+                pass
         
         metrics = (metrics or [])
         existing_ids = {x.get("id") for x in metrics}
         
-        # Générer un ID unique au format M-XXX
+        # Générer un ID unique au format M-XXX si nécessaire
         if not m.get("id") or m.get("id") in existing_ids:
             # Extraire les numéros existants
             existing_numbers = []
             for metric in metrics:
                 metric_id = metric.get("id", "")
-                if metric_id.startswith("M-"):
+                m_match = re.match(r"^M-(\d+)$", str(metric_id))
+                if m_match:
                     try:
-                        num = int(metric_id.split("-")[1])
+                        num = int(m_match.group(1))
                         existing_numbers.append(num)
                     except (ValueError, IndexError):
                         pass
-            
+
             # Trouver le prochain numéro disponible
             next_num = 1
             while next_num in existing_numbers:
                 next_num += 1
-            
+
             m["id"] = f"M-{next_num:03d}"
         
         metrics.append(m)
@@ -490,15 +649,16 @@ def register_build_callbacks(app):
                         html.Label("ID du test"),
                         dcc.Input(
                             id={"role": "test-id"},
-                            type="text",
-                            value="",
-                            placeholder="Ex: T-001 (généré automatiquement si vide)",
+                            type="number",
+                            value=None,
+                            placeholder="Entrez un numéro (ex: 1 pour T-001) ou laissez vide",
                             style={"width": "100%"},
                             persistence=True,
                             persistence_type="session",
+                            min=1,
                             autoComplete="off"
                         ),
-                        html.Small("Laissez vide pour auto-générer T-XXX", className="text-muted")
+                        html.Small("Saisis seulement le numéro. Préfixe 'T-' sera ajouté automatiquement.", className="text-muted")
                     ], md=6),
                     dbc.Col([
                         html.Label("Sévérité"),
@@ -845,6 +1005,8 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output({"role": "test-preview"}, "children"),
+        Output("toast", "is_open", allow_duplicate=True),
+        Output("toast", "children", allow_duplicate=True),
         Input("test-type", "value"),
         Input({"role": "test-id"}, "value", ALL),
         Input({"role": "test-sev"}, "value", ALL),
@@ -859,12 +1021,13 @@ def register_build_callbacks(app):
         Input({"role": "test-pattern"}, "value", ALL),
         Input({"role": "test-ref-db"}, "value", ALL),
         Input({"role": "test-ref-col"}, "value", ALL),
+        State("store_tests", "data"),
         prevent_initial_call=True
     )
-    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
+    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list, tests):
         """Génère la prévisualisation JSON du test"""
         if not ttype:
-            return ""
+            return "", False, ""
         
         def first_with_default(val, default=None):
             if val is None:
@@ -873,7 +1036,14 @@ def register_build_callbacks(app):
                 return val[0] if val else default
             return val
         
-        tid, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
+        tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
+        # tid_raw is expected to be numeric or None. Format as T-### if present.
+        tid = None
+        try:
+            if isinstance(tid_raw, (int, float)) or (isinstance(tid_raw, str) and str(tid_raw).isdigit()):
+                tid = f"T-{int(tid_raw):03d}"
+        except Exception:
+            tid = None
         db, col = first_with_default(db_list), first_with_default(col_list)
         metric = first_with_default(metric_list)
         op, thr = first_with_default(op_list), first_with_default(thr_list)
@@ -882,7 +1052,7 @@ def register_build_callbacks(app):
         refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
 
         obj = {
-            "id": tid or "T-XXX (auto)",
+            "id": tid or "(auto)",
             "type": ttype,
             "severity": (sev or "medium"),
             "sample_on_fail": ("yes" in (sof or []))
@@ -908,7 +1078,13 @@ def register_build_callbacks(app):
                 obj["ref"] = {"database": refdb[3:], "column": refcol or ""}
             else:
                 obj["ref"] = {"database": refdb or "", "column": refcol or ""}
-        return json.dumps(obj, ensure_ascii=False, indent=2)
+        # If tid provided, check whether it's already used
+        if tid:
+            existing_ids = {x.get("id") for x in (tests or []) if x.get("id")}
+            if tid in existing_ids:
+                msg = f"Le numéro {tid} est déjà utilisé. Un ID unique sera attribué automatiquement si nécessaire."
+                return json.dumps(obj, ensure_ascii=False, indent=2), True, msg
+        return json.dumps(obj, ensure_ascii=False, indent=2), False, ""
 
     @app.callback(
         Output("add-test-status", "children"),
@@ -955,19 +1131,22 @@ def register_build_callbacks(app):
         if t is None:
             if not ttype:
                 return "Prévisualisation vide/invalide.", tests, no_update, no_update
-            tid, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
+            tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
             db, col = first_with_default(db_list), first_with_default(col_list)
             metric = first_with_default(metric_list)
             op, thr = first_with_default(op_list), first_with_default(thr_list)
             vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
             pat = first_with_default(pat_list)
             refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
-            t = {
-                "id": tid,
-                "type": ttype,
-                "severity": (sev or "medium"),
-                "sample_on_fail": ("yes" in (sof or []))
-            }
+            # Normalize tid input: accept numeric or T-<num>
+            t = {"id": None, "type": ttype, "severity": (sev or "medium"), "sample_on_fail": ("yes" in (sof or []))}
+            # Accept numeric tid_raw (int or numeric string). Otherwise leave None to auto-generate.
+            if tid_raw is not None and tid_raw != "":
+                try:
+                    tnum = int(tid_raw)
+                    t["id"] = f"T-{tnum:03d}"
+                except Exception:
+                    t["id"] = None
             if ttype in ("null_rate", "uniqueness", "range", "regex"):
                 # Si une métrique est sélectionnée, utiliser la métrique
                 if metric:
@@ -995,22 +1174,22 @@ def register_build_callbacks(app):
         
         # Générer un ID unique au format T-XXX
         if not t.get("id") or t.get("id") in existing_ids:
-            # Extraire les numéros existants
             existing_numbers = []
             for test in tests:
-                test_id = test.get("id", "")
-                if test_id.startswith("T-"):
+                test_id = str(test.get("id", ""))
+                m_match = re.match(r"^T-(\d+)$", test_id)
+                if m_match:
                     try:
-                        num = int(test_id.split("-")[1])
+                        num = int(m_match.group(1))
                         existing_numbers.append(num)
                     except (ValueError, IndexError):
                         pass
-            
+
             # Trouver le prochain numéro disponible
             next_num = 1
             while next_num in existing_numbers:
                 next_num += 1
-            
+
             t["id"] = f"T-{next_num:03d}"
         
         tests.append(t)
@@ -1039,8 +1218,8 @@ def register_build_callbacks(app):
         cfg = cfg_template()
         cfg["context"] = {"stream": q.get("stream"), "project": q.get("project")}
         cfg["databases"] = datasets or []
-        cfg["metrics"] = metrics or []
-        cfg["tests"] = tests or []
+        cfg["metrics"] = sanitize_metrics(metrics or [])
+        cfg["tests"] = sanitize_tests(tests or [])
         cfg["orchestration"]["order"] = [
             *(m.get("id") for m in (metrics or []) if m.get("id")),
             *(t.get("id") for t in (tests or []) if t.get("id"))
@@ -1067,6 +1246,15 @@ def register_build_callbacks(app):
             return ""
         if not preview_text:
             return "Aperçu vide : rien à publier."
+        # Validate the configuration before publishing
+        try:
+            cfg_obj = yaml.safe_load(preview_text) if fmt == 'yaml' else json.loads(preview_text)
+        except Exception:
+            return "Aperçu invalide: impossible de parser le contenu"
+        issues = validate_cfg(cfg_obj)
+        if issues:
+            # Return a formatted list of issues
+            return dbc.Alert([html.P("Validation échouée : vérifier la configuration."), html.Ul([html.Li(i) for i in issues])], color="danger", dismissable=True)
         try:
             folder = dataiku.Folder(folder_id or "dq_params")
         except Exception as e:
@@ -1544,3 +1732,70 @@ def register_build_callbacks(app):
     def toggle_test_help_modal(open_clicks, close_clicks, is_open):
         """Ouvre/ferme le modal d'aide pour les tests"""
         return not is_open
+
+    # ===== Run DQ (simple runner invocation) =====
+
+    @app.callback(
+        Output("dq-run-results", "children"),
+        Input("run-dq", "n_clicks"),
+        State("store_datasets", "data"),
+        State("store_metrics", "data"),
+        State("store_tests", "data"),
+        prevent_initial_call=True
+    )
+    def run_dq(n, datasets, metrics, tests):
+        """Exécute le runner DQ sur un DataFrame d'exemple et affiche les résultats."""
+        if not n:
+            return no_update
+
+        # Build config
+        cfg = {"metrics": sanitize_metrics(metrics or []), "tests": sanitize_tests(tests or [])}
+
+        # Try to load a representative DataFrame
+        df = pd.DataFrame()
+        # If datasets are provided, try the first one
+        try:
+            if datasets:
+                first_ds = datasets[0].get("dataset") if isinstance(datasets[0], dict) else None
+                if first_ds:
+                    try:
+                        ds = dataiku.Dataset(first_ds)
+                        df = ds.get_dataframe(limit=1000)
+                    except Exception:
+                        # fallback to CSV in ./datasets/{name}.csv
+                        import os
+                        csv_path = f"./datasets/{first_ds}.csv"
+                        if os.path.exists(csv_path):
+                            df = pd.read_csv(csv_path)
+        except Exception:
+            df = pd.DataFrame()
+
+        # If still empty, create a minimal DF based on metric/test columns to allow missing_rate to run
+        if df.empty:
+            # Gather column candidates from metrics/tests
+            cols = set()
+            for m in (metrics or []):
+                if isinstance(m, dict) and m.get("column"):
+                    cols.add(m.get("column"))
+            for t in (tests or []):
+                if isinstance(t, dict) and t.get("column"):
+                    cols.add(t.get("column"))
+            if not cols:
+                # create a default column
+                df = pd.DataFrame({"col1": [1, None, 3, None, 5]})
+            else:
+                d = {}
+                for c in cols:
+                    d[c] = [1, None, 3, None, 5]
+                df = pd.DataFrame(d)
+
+        # Run the runner
+        try:
+            results = run_dq_config(df, cfg)
+            pretty = json.dumps(results, ensure_ascii=False, indent=2)
+            return dbc.Card([
+                dbc.CardHeader("Résultats Run DQ"),
+                dbc.CardBody(html.Pre(pretty, style={"background": "#111", "color": "#0f0", "padding": "0.75rem"}))
+            ])
+        except Exception as e:
+            return dbc.Alert(f"Erreur lors du Run DQ: {e}", color="danger")

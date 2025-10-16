@@ -1,6 +1,8 @@
-# DQ Builder — Local Dash App (v3.6)
+# Portal STDA — Local Dash App
 
-**Fixes ciblés :**
-- **ID métrique**: champ stable (`debounce=True`, `autoComplete=off`, `persistence=session`). Le formulaire n'est *jamais* re-généré pendant la saisie.
-- **Colonnes après choix de la base**: callbacks **sans `prevent_initial_call`** et petit **toast** si aucune colonne détectée.
-- Boutons *Ajouter* gardent la reconstruction si la préview est vide.
+Portal STDA fournit deux parcours principaux :
+
+- DQ Management (pour les DQ developers) : Inventory, Builder (déjà implémenté), Runner
+- Drop&DQ (pour les providers) : dépôt simple de datasets et exécution DQ
+
+Ce repository contient le Builder (UI Dash) et les composants pour créer, prévisualiser et publier des configurations DQ.

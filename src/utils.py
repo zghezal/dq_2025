@@ -229,3 +229,181 @@ def duplicate_dq_file(filename, new_filename, folder_id="dq_params"):
     if content is None:
         return False
     return write_dq_file(new_filename, content, folder_id)
+
+
+def sanitize_metric(m: dict) -> dict:
+    """Nettoie/normalise une définition de métrique.
+
+    - Assure les clés attendues et types.
+    - Normalise les types connus (ajoute 'missing_rate').
+    - Retourne une nouvelle dict sans modifications destructives.
+    """
+    if not isinstance(m, dict):
+        return {}
+    allowed_types = {"row_count", "sum", "mean", "distinct_count", "ratio", "missing_rate"}
+    out = {
+        "id": m.get("id") or None,
+        "type": (m.get("type") if m.get("type") in allowed_types else (m.get("type") or "unknown")),
+        "database": m.get("database") or m.get("dataset") or "",
+        "column": m.get("column") or "",
+        "where": m.get("where") or "",
+        "expr": m.get("expr") or "",
+    }
+    return out
+
+
+def sanitize_test(t: dict) -> dict:
+    """Nettoie/normalise une définition de test.
+
+    - Assure les clés attendues, cast des valeurs numériques (threshold, min, max).
+    - Définit des valeurs par défaut pour severity et sample_on_fail.
+    """
+    if not isinstance(t, dict):
+        return {}
+    allowed_types = {"null_rate", "uniqueness", "range", "regex", "foreign_key"}
+    out = {
+        "id": t.get("id") or None,
+        "type": (t.get("type") if t.get("type") in allowed_types else (t.get("type") or "unknown")),
+        "severity": t.get("severity") or "medium",
+        "sample_on_fail": bool(t.get("sample_on_fail") or t.get("sample_on_fail") == True),
+    }
+
+    # Source: metric or database/column
+    if t.get("metric"):
+        out["metric"] = t.get("metric")
+    else:
+        out["database"] = t.get("database") or ""
+        out["column"] = t.get("column") or ""
+
+    # Threshold normalization
+    thr = t.get("threshold")
+    if isinstance(thr, dict):
+        op = thr.get("op")
+        val = thr.get("value")
+        try:
+            val_cast = float(val) if val is not None and val != "" else None
+        except Exception:
+            val_cast = val
+        out["threshold"] = {"op": op, "value": val_cast}
+    elif thr is not None:
+        try:
+            out["threshold"] = {"op": "=", "value": float(thr)}
+        except Exception:
+            out["threshold"] = {"op": "=", "value": thr}
+
+    # Range params
+    if t.get("min") is not None or t.get("max") is not None:
+        try:
+            vmin = float(t.get("min")) if t.get("min") not in (None, "") else None
+        except Exception:
+            vmin = t.get("min")
+        try:
+            vmax = float(t.get("max")) if t.get("max") not in (None, "") else None
+        except Exception:
+            vmax = t.get("max")
+        out["min"] = vmin
+        out["max"] = vmax
+
+    # Regex pattern
+    if t.get("pattern"):
+        out["pattern"] = t.get("pattern")
+
+    # Foreign key ref
+    if t.get("ref"):
+        out["ref"] = t.get("ref")
+
+    return out
+
+
+def sanitize_metrics(metrics_list: list) -> list:
+    """Sanitize a list of metric dicts."""
+    if not metrics_list:
+        return []
+    out = []
+    for m in metrics_list:
+        sm = sanitize_metric(m)
+        if sm:
+            out.append(sm)
+    return out
+
+
+def sanitize_tests(tests_list: list) -> list:
+    """Sanitize a list of test dicts."""
+    if not tests_list:
+        return []
+    out = []
+    for t in tests_list:
+        st = sanitize_test(t)
+        if st:
+            out.append(st)
+    return out
+
+
+def validate_metric_against_meta(metric: dict, meta: dict) -> list:
+    """Validate a single metric dict against its meta. Returns list of issues (empty if ok)."""
+    issues = []
+    if not isinstance(metric, dict):
+        issues.append("Metric is not a dict")
+        return issues
+    mtype = metric.get("type")
+    if mtype != meta.get("label") and mtype not in (meta.get("label"),):
+        # allow same
+        pass
+    # database requirement
+    if meta.get("requires_database") and not metric.get("database"):
+        issues.append(f"Metric '{metric.get('id')}' requires a database")
+    if meta.get("requires_column") and not metric.get("column"):
+        issues.append(f"Metric '{metric.get('id')}' requires a column")
+    return issues
+
+
+def validate_test(t: dict, metric_ids: list) -> list:
+    issues = []
+    if not isinstance(t, dict):
+        issues.append("Test is not a dict")
+        return issues
+    ttype = t.get("type")
+    if ttype is None:
+        issues.append(f"Test '{t.get('id')}' missing type")
+        return issues
+    # If test references a metric, ensure it exists
+    if t.get("metric") and t.get("metric") not in (metric_ids or []):
+        issues.append(f"Test '{t.get('id')}' references unknown metric '{t.get('metric')}'")
+    # For database-based tests, require database and column
+    if not t.get("metric"):
+        if not t.get("database"):
+            issues.append(f"Test '{t.get('id')}' requires a database")
+        if not t.get("column"):
+            issues.append(f"Test '{t.get('id')}' requires a column")
+    # Validate threshold numeric if present
+    thr = t.get("threshold")
+    if isinstance(thr, dict) and thr.get("value") is not None:
+        try:
+            float(thr.get("value"))
+        except Exception:
+            issues.append(f"Test '{t.get('id')}' threshold value is not numeric: {thr.get('value')}")
+    return issues
+
+
+def validate_cfg(cfg: dict) -> list:
+    """Validate a whole DQ config dict. Returns list of issues (empty if ok)."""
+    issues = []
+    metrics = cfg.get("metrics", []) or []
+    tests = cfg.get("tests", []) or []
+    metric_ids = [m.get("id") for m in metrics if m.get("id")]
+
+    # Use registry meta to validate metrics where possible
+    try:
+        from src.metrics_registry import METRICS as REG_METRICS
+    except Exception:
+        REG_METRICS = {}
+
+    for m in metrics:
+        mtype = m.get("type")
+        meta = REG_METRICS.get(mtype, {})
+        issues.extend(validate_metric_against_meta(m, meta))
+
+    for t in tests:
+        issues.extend(validate_test(t, metric_ids))
+
+    return issues

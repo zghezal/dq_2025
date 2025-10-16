@@ -8,10 +8,13 @@ def navbar():
     """Barre de navigation principale"""
     return dbc.Navbar(
         dbc.Container([
-            html.A(dbc.NavbarBrand("DQ App", className="ms-2"), href="/", className="navbar-brand"),
+            html.A(dbc.NavbarBrand("Portal STDA", className="ms-2"), href="/", className="navbar-brand"),
             dbc.Nav([
                 dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
-                dbc.NavItem(dbc.NavLink("DQ Management", href="/dq", active="exact")),
+                dbc.NavItem(dbc.NavLink("DQ Inventory", href="/dq-inventory", active="exact")),
+                dbc.NavItem(dbc.NavLink("Builder", href="/build", active="exact")),
+                dbc.NavItem(dbc.NavLink("Runner", href="/dq-runner", active="exact")),
+                dbc.NavItem(dbc.NavLink("Drop&DQ", href="/drop-dq", active="exact")),
                 dbc.NavItem(dbc.NavLink("Configurations", href="/configs", active="exact"))
             ], className="ms-auto", navbar=True),
             html.Div(id="crumb", className="ms-4 small text-muted")

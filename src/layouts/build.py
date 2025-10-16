@@ -1,7 +1,9 @@
 # Page Build (wizard de création DQ avec onglets)
 
 from dash import html, dcc
+from src.metrics_registry import get_metric_options
 import dash_bootstrap_components as dbc
+import dash_html_components as html
 
 
 def build_page():
@@ -52,13 +54,7 @@ def build_page():
                                     ]),
                                     dcc.Dropdown(
                                         id="metric-type",
-                                        options=[
-                                            {"label": "row_count", "value": "row_count"},
-                                            {"label": "sum", "value": "sum"},
-                                            {"label": "mean", "value": "mean"},
-                                            {"label": "distinct_count", "value": "distinct_count"},
-                                            {"label": "ratio (metricA / metricB)", "value": "ratio"}
-                                        ],
+                                        options=get_metric_options(),
                                         placeholder="Choisir le type",
                                         clearable=False,
                                         persistence=True,
@@ -167,6 +163,8 @@ def build_page():
                             style={"background": "#111", "color": "#eee", "padding": "1rem", "whiteSpace": "pre-wrap", "borderRadius": "4px"}
                         ),
                         dbc.Button("✅ Publier", id="publish", color="success", className="mt-3"),
+                        dbc.Button("▶️ Run DQ", id="run-dq", color="primary", className="mt-3 ms-2"),
+                        html.Div(id="dq-run-results", className="mt-3"),
                         html.Div(id="publish-status", className="text-success mt-2")
                     ])
                 ], className="mt-3")
@@ -182,6 +180,10 @@ def build_page():
             icon="info",
             style={"position": "fixed", "top": 20, "right": 20, "zIndex": 2000}
         ),
+    # Hidden placeholders so pattern-matching callback ids exist for validation
+    # Note: include an extra `_placeholder` key so these do NOT match callbacks that
+    # expect exactly {'role':'metric-preview'} or {'role':'metric-column','form':'metric'}
+    # (placeholders for validation moved to app.validation_layout to avoid duplicate DOM objects)
         
         # Modal de documentation pour les métriques
         dbc.Modal([
@@ -303,3 +305,14 @@ def build_page():
         ], id="test-help-modal", size="lg", is_open=False),
         
     ], fluid=True)
+
+# Placeholder global pour les callbacks qui ciblent {"role": "metric-preview"}
+metric_preview_placeholder = html.Div(id={"role": "metric-preview"})
+
+# Insérer metric_preview_placeholder dans la liste des children du layout,
+# par exemple juste après la dropdown des métriques ou dans la colonne de preview.
+layout_children = [
+    # ... autres composants ...
+    metric_preview_placeholder,
+    # ... autres composants ...
+]
