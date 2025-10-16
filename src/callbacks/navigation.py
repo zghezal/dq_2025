@@ -17,6 +17,8 @@ from src.layouts.select_dq_point import select_dq_point_page
 from src.layouts.dq_landing import dq_landing_page
 from src.layouts.drop_landing import drop_landing_page
 from src.layouts.dashboard import dashboard_page
+from src.layouts.check_drop_dashboard import check_drop_dashboard_page
+from src.layouts.dq_management_dashboard import dq_management_dashboard_page
 from dash import Input, Output, State
 
 
@@ -34,6 +36,10 @@ def register_navigation_callbacks(app):
             parts.append("Home")
         elif pathname == "/dashboard":
             parts.append("Dashboard")
+        elif pathname == "/check-drop-dashboard":
+            parts.append("Check&Drop Dashboard")
+        elif pathname == "/dq-management-dashboard":
+            parts.append("DQ Management Dashboard")
         elif pathname == "/dq":
             parts.append("DQ Management")
         elif pathname == "/dq-inventory":
@@ -63,6 +69,10 @@ def register_navigation_callbacks(app):
             return home_page()
         if clean_path == "/dashboard":
             return dashboard_page()
+        if clean_path == "/check-drop-dashboard":
+            return check_drop_dashboard_page()
+        if clean_path == "/dq-management-dashboard":
+            return dq_management_dashboard_page()
         if clean_path == "/build":
             return build_page()
         if clean_path == "/dq":

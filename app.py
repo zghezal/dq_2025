@@ -7,6 +7,8 @@ import dash_bootstrap_components as dbc
 from src.layouts.navbar import navbar
 from src.layouts.home import home_page
 from src.layouts.dashboard import dashboard_page
+from src.layouts.check_drop_dashboard import check_drop_dashboard_page
+from src.layouts.dq_management_dashboard import dq_management_dashboard_page
 from src.layouts.dq import dq_page
 from src.layouts.build import build_page
 from src.layouts.configs import configs_page
@@ -41,6 +43,8 @@ app.validation_layout = html.Div([
     html.Div(id="page-content"),
     home_page(),
     dashboard_page(),
+    check_drop_dashboard_page(),
+    dq_management_dashboard_page(),
     dq_page(),
         build_page(),
         dq_inventory_page(),
