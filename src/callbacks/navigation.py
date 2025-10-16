@@ -112,6 +112,26 @@ def register_navigation_callbacks(app):
         return "/select-project", f"?stream={stream_value}"
 
     @app.callback(
+        Output("select-project-dropdown", "options"),
+        Input("url", "search"),
+        State("url", "pathname"),
+        prevent_initial_call=False
+    )
+    def update_project_options(search, pathname):
+        """Populate project dropdown based on selected stream from URL"""
+        if pathname != "/select-project":
+            return []
+        if not search:
+            return []
+        q = urlparse.parse_qs(search.lstrip("?"))
+        stream = q.get("stream", [None])[0]
+        if not stream:
+            return []
+        from src.config import STREAMS
+        projects = STREAMS.get(stream, [])
+        return [{"label": p, "value": p} for p in projects]
+
+    @app.callback(
         Output("url", "pathname", allow_duplicate=True),
         Output("url", "search", allow_duplicate=True),
         Input("select-project-next", "n_clicks"),
