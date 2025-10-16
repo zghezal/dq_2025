@@ -14,9 +14,18 @@ def select_dq_point_page():
             dcc.Store(id="inventory-datasets-store", storage_type="memory"),
 
             # Affichage de la liste des datasets associés au dq point sélectionné
-            html.Div([
-                html.H5("Datasets associés"),
-                dcc.Checklist(id="datasets-checklist", options=[], value=[], inputStyle={"margin-right": "8px"}),
-                html.Div(id="datasets-help", className="small text-muted mt-1", children="Sélectionnez les datasets qui seront utilisés pour les étapes suivantes")
-            ], id="datasets-container", className="mt-3")
+            dbc.Card([
+                dbc.CardHeader(html.H5("📦 Datasets associés", className="mb-0")),
+                dbc.CardBody([
+                    html.Div(id="datasets-status", className="mb-2 text-muted", children="Sélectionnez un DQ Point pour voir les datasets disponibles"),
+                    dcc.Checklist(
+                        id="datasets-checklist", 
+                        options=[], 
+                        value=[], 
+                        inputStyle={"margin-right": "8px"},
+                        className="mb-2"
+                    ),
+                    html.Div(id="datasets-help", className="small text-muted", children="Cochez les datasets que vous souhaitez utiliser")
+                ])
+            ], id="datasets-container", className="mt-4")
     ], fluid=True)

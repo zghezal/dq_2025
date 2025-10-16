@@ -170,6 +170,7 @@ def register_navigation_callbacks(app):
 
     @app.callback(
         Output("datasets-checklist", "options"),
+        Output("datasets-status", "children"),
         Output("inventory-datasets-store", "data"),
         Output("store_datasets", "data", allow_duplicate=True),
         Input("select-dq-point-dropdown", "value"),
@@ -182,8 +183,11 @@ def register_navigation_callbacks(app):
         Utilise `config/inventory.yaml` via `src.utils.inventory.get_datasets_for_dq_point`.
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
         """
+        print(f"[DEBUG] populate_datasets_for_dq_point called: dq_point={dq_point}, search={search}")
+        
         if not dq_point:
-            return [], {}, []
+            print("[DEBUG] No dq_point, returning empty")
+            return [], "Sélectionnez un DQ Point pour voir les datasets disponibles", {}, []
 
         stream = None
         project = None
@@ -191,8 +195,12 @@ def register_navigation_callbacks(app):
             q = urlparse.parse_qs(search.lstrip('?'))
             stream = q.get('stream', [None])[0]
             project = q.get('project', [None])[0]
+        
+        print(f"[DEBUG] Extracted params: stream={stream}, project={project}")
 
         datasets = get_datasets_for_dq_point(dq_point, stream=stream, project=project) or []
+        
+        print(f"[DEBUG] Found {len(datasets)} datasets: {[d.get('alias') for d in datasets]}")
 
         options = [{"label": f"{d.get('alias') or d.get('name')}", "value": f"{d.get('alias') or d.get('name')}"} for d in datasets]
         store_payload = {"dq_point": dq_point, "datasets": datasets}
@@ -204,4 +212,10 @@ def register_navigation_callbacks(app):
             alias = d.get('alias') or (name and name.split('.')[0].lower())
             store_datasets_payload.append({"alias": alias, "dataset": name})
 
-        return options, store_payload, store_datasets_payload
+        if len(options) == 0:
+            status_msg = f"✅ DQ Point '{dq_point}' sélectionné. Aucun dataset trouvé pour Stream={stream}, Project={project}"
+        else:
+            status_msg = f"✅ {len(options)} dataset(s) trouvé(s) pour {dq_point} (Stream={stream}, Project={project})"
+        
+        print(f"[DEBUG] Returning {len(options)} options")
+        return options, status_msg, store_payload, store_datasets_payload
