@@ -5,6 +5,12 @@ DQ Builder is a Dash-based web application designed for comprehensive Data Quali
 
 The business vision behind DQ Builder is to provide a user-friendly, efficient tool for data stewards and analysts to proactively manage data quality, reduce data-related errors, and improve decision-making based on reliable data. It aims to simplify a complex process, making advanced DQ configurations accessible without deep technical expertise.
 
+**Builder Navigation Flow**: All Builder access points (navbar, dashboards, buttons) redirect to a 3-step selection wizard:
+1. `/select-stream` - Select data Stream
+2. `/select-project` - Select Project (filtered by stream)
+3. `/select-dq-point` - Select DQ Point (Extraction/Transformation/Chargement)
+4. `/build` - Configuration page with context parameters in URL
+
 ## User Preferences
 - I prefer clear, concise explanations and direct answers.
 - I appreciate an iterative development approach, where changes are introduced incrementally.
