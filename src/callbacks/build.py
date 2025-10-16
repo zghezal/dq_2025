@@ -234,13 +234,12 @@ def register_build_callbacks(app):
             ])
         ], className="mb-3")
 
-        # Groupe 2: Sélection Dataset/Colonne (depuis datasets déjà configurés à l'étape 1)
+        # Groupe 2: Sélection Dataset & Filtre
         meta = get_metric_meta(metric_type)
-        column_visible = meta.get("requires_column", False)
         db_visible = meta.get("requires_database", True)
 
         dataset_card = dbc.Card([
-            dbc.CardHeader("📊 Sélection Dataset & Colonne"),
+            dbc.CardHeader("📊 Sélection Dataset & Filtre"),
             dbc.CardBody([
                 html.Small("Sélectionnez parmi les datasets configurés à l'étape 1 (Datasets)", className="text-muted d-block mb-2"),
                 dbc.Row([
@@ -257,58 +256,71 @@ def register_build_callbacks(app):
                         )
                     ], md=6),
                     dbc.Col([
-                        html.Label("Colonne", style={"display": "block" if column_visible else "none"}),
-                        dcc.Dropdown(
-                            id={"role": "metric-column", "form": "metric"},
-                            options=[],
-                            placeholder="Choisir une colonne",
-                            clearable=False,
+                        html.Label("Filtre (WHERE clause)"),
+                        dcc.Input(
+                            id={"role": "metric-where"},
+                            type="text",
+                            placeholder="Ex: status = 'active'",
+                            className="form-control",
                             persistence=True,
-                            persistence_type="session",
-                            style={"display": "block" if column_visible else "none"}
+                            persistence_type="session"
                         ),
-                        html.Div(id="metric-helper", className="text-muted small", 
-                                style={"display": "block" if column_visible else "none"})
+                        html.Small("Optionnel : condition SQL pour filtrer les données", className="text-muted")
                     ], md=6)
                 ])
             ])
         ], className="mb-3")
 
-        # Groupe 3: Filtres et Options (paramètres supplémentaires uniquement)
-        # On exclut les types "dataset" et "columns" car déjà gérés dans le Groupe 2
-        extras_content = []
+        # Groupe 3: Sélection de Colonne et Options
+        column_visible = meta.get("requires_column", False)
+        
+        column_content = []
+        if column_visible:
+            column_content.append(html.Label("Colonne(s)"))
+            column_content.append(dcc.Dropdown(
+                id={"role": "metric-column", "form": "metric"},
+                options=[],
+                multi=True,  # Permettre sélection multiple
+                placeholder="Choisir une ou plusieurs colonnes",
+                clearable=True,
+                persistence=True,
+                persistence_type="session"
+            ))
+            column_content.append(html.Small("Sélectionnez une ou plusieurs colonnes pour la métrique", className="text-muted d-block mb-3"))
+            column_content.append(html.Div(id="metric-helper", className="text-muted small"))
+        
+        # Paramètres supplémentaires (hors dataset et columns)
         params = meta.get("params", []) if meta else []
         for p in params:
-            # support params declared as strings in the registry (legacy) or as dicts
             if isinstance(p, str):
                 p = {"name": p, "label": p, "type": "text"}
-            p_name = p.get("name")
-            p_label = p.get("label") or p_name
             p_type = p.get("type") or "text"
             
-            # Ignorer les paramètres "dataset" et "columns" (déjà dans Groupe 2)
+            # Ignorer dataset et columns (déjà gérés)
             if p_type in ["dataset", "columns"]:
                 continue
                 
-            # text param: simple input
+            # text param
             if p_type == "text":
-                extras_content.append(html.Label(p_label))
-                extras_content.append(dcc.Input(
+                p_name = p.get("name")
+                p_label = p.get("label") or p_name
+                column_content.append(html.Label(p_label))
+                column_content.append(dcc.Input(
                     id={"role": f"metric-param", "name": p_name},
                     type="text",
                     value=p.get("default", ""),
                     placeholder=p.get("placeholder", ""),
-                    style={"width": "100%"},
+                    className="form-control mb-2",
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
                 ))
-                extras_content.append(html.Small(p.get("help", ""), className="text-muted"))
+                column_content.append(html.Small(p.get("help", ""), className="text-muted d-block mb-3"))
 
         options_card = dbc.Card([
-            dbc.CardHeader("⚙️ Filtres et Options"),
-            dbc.CardBody(extras_content if extras_content else [html.P("Aucune option pour ce type de métrique", className="text-muted")])
-        ], className="mb-3") if params else html.Div()
+            dbc.CardHeader("🔧 Sélection de Colonne et Options"),
+            dbc.CardBody(column_content if column_content else [html.P("Aucune colonne ou option pour ce type de métrique", className="text-muted")])
+        ], className="mb-3")
 
         # Prévisualisation
         preview = dbc.Card([
