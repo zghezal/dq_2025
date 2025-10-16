@@ -461,6 +461,7 @@ def register_build_callbacks(app):
         # Handle multi-column selection: mcol_list[0] is the value from dropdown (can be a list if multi=True)
         mcol_raw = first(mcol_list)
         mcol = mcol_raw if mcol_raw else None
+        print(f"DEBUG preview_metric: mcol_list={mcol_list}, mcol_raw={mcol_raw}, mcol={mcol}, type={type(mcol)}")
         mwhere = first(mwhere_list)
         mexpr = first(mexpr_list)
         # metric params values come as a list corresponding to declared params order
