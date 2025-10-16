@@ -45,6 +45,8 @@ The application will be available at `http://localhost:5000`
   - `utils.py` - Utility functions
   - `config.py` - Configuration settings
 
+For detailed architecture and development information, see [replit.md](replit.md).
+
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
