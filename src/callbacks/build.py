@@ -458,7 +458,9 @@ def register_build_callbacks(app):
             return "", False, ""
         mid = first(mid_list)
         mdb = first(mdb_list)
-        mcol = first(mcol_list)
+        # Handle multi-column selection: mcol_list[0] is the value from dropdown (can be a list if multi=True)
+        mcol_raw = first(mcol_list)
+        mcol = mcol_raw if mcol_raw else None
         mwhere = first(mwhere_list)
         mexpr = first(mexpr_list)
         # metric params values come as a list corresponding to declared params order
@@ -538,7 +540,9 @@ def register_build_callbacks(app):
         if m is None:
             mid_raw = first(mid_list)
             mdb = first(mdb_list)
-            mcol = first(mcol_list)
+            # Handle multi-column selection: mcol_list[0] is the value from dropdown (can be a list if multi=True)
+            mcol_raw = first(mcol_list)
+            mcol = mcol_raw if mcol_raw else None
             mwhere = first(mwhere_list)
             mexpr = first(mexpr_list)
             if not mtype:
