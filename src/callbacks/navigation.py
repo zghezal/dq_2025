@@ -183,7 +183,7 @@ def register_navigation_callbacks(app):
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
         """
         if not dq_point:
-            return [], {}
+            return [], {}, []
 
         stream = None
         project = None
