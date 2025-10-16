@@ -161,8 +161,19 @@ def register_navigation_callbacks(app):
         """Remplit le dropdown des zones basé sur stream/project de l'URL."""
         print(f"[DEBUG] populate_zone_dropdown CALLED: pathname='{pathname}', search='{search}'")
         
-        if pathname != "/select-dq-point":
-            print(f"[DEBUG] pathname mismatch, returning empty. Expected '/select-dq-point', got '{pathname}'")
+        # Clean pathname to handle both encoded and clean paths
+        clean_pathname = urlparse.unquote(pathname) if pathname else pathname
+        # Extract path without query params
+        if clean_pathname and '?' in clean_pathname:
+            path_part = clean_pathname.split('?')[0]
+            # If search is empty, extract from pathname
+            if not search and '?' in clean_pathname:
+                search = '?' + clean_pathname.split('?')[1]
+        else:
+            path_part = clean_pathname
+        
+        if path_part != "/select-dq-point":
+            print(f"[DEBUG] pathname mismatch, returning empty. Expected '/select-dq-point', got '{path_part}'")
             return []
         
         stream_id = None
@@ -199,16 +210,15 @@ def register_navigation_callbacks(app):
         return "/build", params
 
     @app.callback(
-        Output("datasets-checklist", "options"),
+        Output("datasets-preview", "children"),
         Output("datasets-status", "children"),
         Output("inventory-datasets-store", "data"),
-        Output("store_datasets", "data", allow_duplicate=True),
         Input("select-zone-dropdown", "value"),
         Input("url", "search"),
         prevent_initial_call='initial_duplicate'
     )
     def populate_datasets_for_zone(zone_id, search):
-        """Remplit la checklist et le store avec les datasets correspondant à la zone sélectionnée.
+        """Affiche un aperçu des datasets de la zone et stocke les données pour le Builder.
 
         Utilise `config/inventory.yaml` via `src.inventory.get_datasets_for_zone`.
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
@@ -217,7 +227,8 @@ def register_navigation_callbacks(app):
         
         if not zone_id:
             print("[DEBUG] No zone, returning empty")
-            return [], "Sélectionnez une zone pour voir les datasets disponibles", {}, []
+            from dash import html
+            return html.Em("Sélectionnez une zone"), "Sélectionnez une zone pour voir les datasets disponibles", {}
 
         stream_id = None
         project_id = None
@@ -232,20 +243,22 @@ def register_navigation_callbacks(app):
         
         print(f"[DEBUG] Found {len(datasets)} datasets: {[d.get('alias') for d in datasets]}")
 
-        options = [{"label": f"{d.get('alias') or d.get('name')}", "value": f"{d.get('alias') or d.get('name')}"} for d in datasets]
         store_payload = {"zone": zone_id, "datasets": datasets}
 
-        # Also prepare a shape compatible with store_datasets used par la page Build
-        store_datasets_payload = []
-        for d in datasets:
-            name = d.get('name') or d.get('alias')
-            alias = d.get('alias') or (name and name.split('.')[0].lower())
-            store_datasets_payload.append({"alias": alias, "dataset": name})
-
-        if len(options) == 0:
-            status_msg = f"✅ Zone '{zone_id}' sélectionnée. Aucun dataset trouvé pour Stream={stream_id}, Project={project_id}"
+        if len(datasets) == 0:
+            from dash import html
+            status_msg = f"Zone '{zone_id}' sélectionnée"
+            preview = html.Em("Aucun dataset trouvé")
         else:
-            status_msg = f"✅ {len(options)} dataset(s) trouvé(s) pour zone '{zone_id}' (Stream={stream_id}, Project={project_id})"
+            from dash import html
+            status_msg = f"✅ {len(datasets)} dataset(s) disponible(s)"
+            # Afficher la liste des datasets avec leurs alias
+            dataset_items = []
+            for d in datasets:
+                alias = d.get('alias', 'N/A')
+                name = d.get('name', 'N/A')
+                dataset_items.append(html.Li(f"{alias} ({name})", className="small"))
+            preview = html.Ul(dataset_items, className="mb-0")
         
-        print(f"[DEBUG] Returning {len(options)} options")
-        return options, status_msg, store_payload, store_datasets_payload
+        print(f"[DEBUG] Returning preview for {len(datasets)} datasets")
+        return preview, status_msg, store_payload

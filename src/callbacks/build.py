@@ -48,9 +48,9 @@ def register_build_callbacks(app):
                 color="warning",
                 className="mb-3"
             )
-        dq_point_text = f" • Point DQ = {q['dq_point']}" if q.get("dq_point") else ""
+        zone_text = f" • Zone = {q['zone']}" if q.get("zone") else ""
         return dbc.Alert(
-            f"Contexte: Stream = {q['stream']} • Projet = {q['project']}{dq_point_text}",
+            f"Contexte: Stream = {q['stream']} • Projet = {q['project']}{zone_text}",
             color="info",
             className="mb-3"
         )
@@ -137,7 +137,8 @@ def register_build_callbacks(app):
 
         stream = q.get("stream")
         projet = q.get("project") 
-        dq_point = q.get("dq_point")
+        zone = q.get("zone")
+        
         # If inventory store is present (populated at select-dq-point), prefer it
         if inv_store_data and isinstance(inv_store_data, dict):
             items = inv_store_data.get("datasets", []) or []
@@ -146,21 +147,22 @@ def register_build_callbacks(app):
             options = [{"label": n, "value": n} for n in names]
 
             # Auto-load into store_datasets if empty and context present
-            if not current_data and stream and projet and dq_point and names:
+            if not current_data and stream and projet and zone and names:
                 auto_data = []
                 for it, name in zip(items, names):
                     alias = it.get("alias") or (name and name.split(".")[0].lower())
                     auto_data.append({"alias": alias, "dataset": name})
+                print(f"[DEBUG] Auto-loading {len(auto_data)} datasets from inventory into Builder")
                 return options, auto_data
 
             return options, current_data or no_update
 
-        # Fallback behaviour: use list_project_datasets as before
-        datasets = list_project_datasets(stream, projet, dq_point)
+        # Fallback behaviour: use list_project_datasets as before (deprecated)
+        datasets = list_project_datasets(stream, projet, zone)
         options = [{"label": ds, "value": ds} for ds in datasets]
 
         # Auto-charger les datasets dans le store s'il est vide et qu'on a un contexte
-        if not current_data and stream and projet and dq_point and datasets:
+        if not current_data and stream and projet and zone and datasets:
             auto_data = [{"alias": ds.lower(), "dataset": ds} for ds in datasets]
             return options, auto_data
 
