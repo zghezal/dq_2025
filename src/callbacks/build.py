@@ -224,17 +224,18 @@ def register_build_callbacks(app):
             ])
         ], className="mb-3")
 
-        # Groupe 2: Configuration Dataset (render fields according to metric meta)
+        # Groupe 2: Sélection Dataset/Colonne (depuis datasets déjà configurés à l'étape 1)
         meta = get_metric_meta(metric_type)
         column_visible = meta.get("requires_column", False)
         db_visible = meta.get("requires_database", True)
 
         dataset_card = dbc.Card([
-            dbc.CardHeader("🗄️ Configuration Dataset"),
+            dbc.CardHeader("📊 Sélection Dataset & Colonne"),
             dbc.CardBody([
+                html.Small("Sélectionnez parmi les datasets configurés à l'étape 1 (Datasets)", className="text-muted d-block mb-2"),
                 dbc.Row([
                     dbc.Col([
-                        html.Label("Base de données (alias)"),
+                        html.Label("Dataset (alias)"),
                         dcc.Dropdown(
                             id={"role": "metric-db"},
                             options=[{"label": a, "value": a} for a in ds_aliases],
