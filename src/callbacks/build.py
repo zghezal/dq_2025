@@ -669,9 +669,10 @@ def register_build_callbacks(app):
             except Exception:
                 pass
             
-            # Capture export value (checkbox returns list, check if "export" is in it)
+            # Capture export value (checkbox returns list within a list due to ALL pattern)
+            # mexport_list is like [["export"]] if checked, [[]] if unchecked
             mexport = first(mexport_list) if mexport_list else []
-            m["export"] = "export" in (mexport or [])
+            m["export"] = bool(mexport and "export" in mexport)
         
         metrics = (metrics or [])
         existing_ids = {x.get("id") for x in metrics}
