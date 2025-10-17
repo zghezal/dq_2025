@@ -672,6 +672,9 @@ def register_build_callbacks(app):
             # Capture export value (checkbox returns list within a list due to ALL pattern)
             # mexport_list is like [["export"]] if checked, [[]] if unchecked
             mexport = first(mexport_list) if mexport_list else []
+            print(f"[DEBUG] mexport_list = {mexport_list}")
+            print(f"[DEBUG] mexport (first) = {mexport}")
+            print(f"[DEBUG] export final = {bool(mexport and 'export' in mexport)}")
             m["export"] = bool(mexport and "export" in mexport)
         
         metrics = (metrics or [])
