@@ -1,0 +1,16 @@
+plugin: test.range2
+context:
+  metrics_values: { m1: 5 }
+cases:
+  - name: ok_inclusive
+    params:
+      id: T-001
+      label: demo
+      specific: { value_from_metric: "m1", low: 1, high: 10, inclusive: true }
+    expect: { passed: true }
+  - name: ko_outside
+    params:
+      id: T-002
+      label: demo
+      specific: { value_from_metric: "m1", low: 6, high: 10, inclusive: true }
+    expect: { passed: false, message_contains: "out of range" }
