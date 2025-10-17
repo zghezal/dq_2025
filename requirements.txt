@@ -1,8 +1,8 @@
-dash>=2.15.0
-dash-bootstrap-components>=1.5.0
 PyYAML>=6.0.1
-dash>=2.15.0
 dash-bootstrap-components>=1.5.0
 dash-core-components
 dash-html-components
-PyYAML>=6.0.1
+dash>=2.15.0
+pandas>=2.2.0
+pyarrow>=14.0.0
+pydantic>=2.8.0

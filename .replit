@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["libyaml"]
+packages = ["glibcLocales", "libyaml"]
 
 [workflows]
 runButton = "Project"
@@ -22,21 +22,25 @@ args = "Dash App"
 name = "Dash App"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python run.py"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 32797
+localPort = 8051
 externalPort = 3000
+
+[[ports]]
+localPort = 33223
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"
