@@ -514,11 +514,12 @@ def register_build_callbacks(app):
     Input({"role": "metric-column", "form": "metric"}, "value", ALL),
         Input({"role": "metric-where"}, "value", ALL),
         Input({"role": "metric-expr"}, "value", ALL),
+        Input({"role": "metric-export"}, "value", ALL),
         State({"role": "metric-param", "name": ALL}, "value"),
         State("store_metrics", "data"),
         prevent_initial_call=True
     )
-    def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values, metrics):
+    def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mexport_list, mparam_values, metrics):
         """Génère la prévisualisation JSON de la métrique"""
         if not mtype:
             return "", False, ""
@@ -570,6 +571,11 @@ def register_build_callbacks(app):
                 obj["where"] = mwhere
         if "expr" in params:
             obj["expr"] = mexpr or ""
+        
+        # Capture export value
+        mexport = first(mexport_list) if mexport_list else []
+        obj["export"] = bool(mexport and "export" in mexport)
+        
         # If a concrete display_id was provided, check whether it already exists
         if display_id:
             existing_ids = {x.get("id") for x in (metrics or []) if x.get("id")}
