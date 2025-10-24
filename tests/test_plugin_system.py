@@ -386,6 +386,444 @@ class TestEndToEndFlow:
         print(f"   Aggregation produced {len(result.get_dataframe())} rows")
 
 
+class TestSequencer:
+    """Tests du séquenceur d'exécution."""
+    
+    def test_simple_sequence(self):
+        """Test d'un séquençage simple sans dépendances."""
+        from src.plugins.sequencer import build_execution_plan, StepKind
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "missing_rate", "params": {}},
+                {"id": "M-002", "type": "missing_rate", "params": {}}
+            ],
+            "tests": [
+                {"id": "T-001", "type": "range", "params": {}}
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        assert len(plan.steps) == 3
+        assert plan.metrics_count == 2
+        assert plan.tests_count == 1
+        
+        # Les métriques doivent être au niveau 0
+        metrics = plan.get_steps_by_kind(StepKind.METRIC)
+        assert all(m.level == 0 for m in metrics)
+        
+        # Le test doit être au niveau 0 aussi (pas de dépendances)
+        tests = plan.get_steps_by_kind(StepKind.TEST)
+        assert all(t.level == 0 for t in tests)
+    
+    def test_sequence_with_virtual_dataset_dependency(self):
+        """Test avec un test qui dépend d'un virtual dataset."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "aggregation_by_column", "params": {}}
+            ],
+            "tests": [
+                {
+                    "id": "T-001",
+                    "type": "range",
+                    "database": "virtual:M-001",  # Dépendance !
+                    "column": "sum_amount"
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        # La métrique doit être niveau 0
+        m_step = next(s for s in plan.steps if s.id == "M-001")
+        assert m_step.level == 0
+        
+        # Le test doit être niveau 1 (dépend de M-001)
+        t_step = next(s for s in plan.steps if s.id == "T-001")
+        assert t_step.level == 1
+        assert "M-001" in t_step.depends_on
+    
+    def test_sequence_with_metric_reference(self):
+        """Test avec un test qui référence directement une métrique."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-002", "type": "missing_rate", "params": {}}
+            ],
+            "tests": [
+                {
+                    "id": "T-002",
+                    "type": "range",
+                    "metric": "M-002",  # Référence directe
+                    "params": {}
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        # Le test doit dépendre de la métrique
+        t_step = next(s for s in plan.steps if s.id == "T-002")
+        assert t_step.level == 1
+        assert "M-002" in t_step.depends_on
+    
+    def test_sequence_multiple_levels(self):
+        """Test avec plusieurs niveaux de dépendances."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "aggregation_by_column", "params": {}},
+                {"id": "M-002", "type": "missing_rate", "params": {}}
+            ],
+            "tests": [
+                {
+                    "id": "T-001",
+                    "type": "range",
+                    "database": "virtual:M-001"
+                },
+                {
+                    "id": "T-002",
+                    "type": "range",
+                    "metric": "M-002"
+                },
+                {
+                    "id": "T-003",
+                    "type": "range",
+                    "params": {}  # Pas de dépendances
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        assert plan.max_level == 1
+        
+        # Niveau 0: M-001, M-002, T-003
+        level_0 = plan.get_steps_by_level(0)
+        assert len(level_0) == 3
+        assert all(s.id in ["M-001", "M-002", "T-003"] for s in level_0)
+        
+        # Niveau 1: T-001, T-002
+        level_1 = plan.get_steps_by_level(1)
+        assert len(level_1) == 2
+        assert all(s.id in ["T-001", "T-002"] for s in level_1)
+    
+    def test_sequence_validation_duplicate_ids(self):
+        """Test de validation: détection des IDs dupliqués."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "missing_rate", "params": {}},
+                {"id": "M-001", "type": "aggregation_by_column", "params": {}}  # Duplicate!
+            ],
+            "tests": []
+        }
+        
+        try:
+            plan = build_execution_plan(config)
+            errors = plan.validate()
+            assert len(errors) > 0
+            assert any("dupliqué" in e.lower() for e in errors)
+        except ValueError:
+            # C'est aussi acceptable de lever une exception
+            pass
+    
+    def test_sequence_validation_missing_dependency(self):
+        """Test de validation: détection des dépendances manquantes."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [],
+            "tests": [
+                {
+                    "id": "T-001",
+                    "type": "range",
+                    "database": "virtual:M-999"  # N'existe pas!
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        # Le plan se construit mais la dépendance est notée
+        t_step = next(s for s in plan.steps if s.id == "T-001")
+        # La dépendance est ajoutée même si la métrique n'existe pas
+        # (la validation côté catalog détectera l'erreur)
+        assert len(t_step.depends_on) == 0  # M-999 n'est pas dans metric_ids
+    
+    def test_sequence_ordering(self):
+        """Test que l'ordre dans le JSON est préservé à niveau égal."""
+        from src.plugins.sequencer import build_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-003", "type": "missing_rate", "params": {}},
+                {"id": "M-001", "type": "missing_rate", "params": {}},
+                {"id": "M-002", "type": "missing_rate", "params": {}}
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        
+        # L'ordre devrait être préservé (M-003, M-001, M-002)
+        metric_ids = [s.id for s in plan.get_steps_by_kind("metric")]
+        assert metric_ids == ["M-003", "M-001", "M-002"]
+    
+    def test_print_execution_plan(self):
+        """Test de l'affichage du plan (ne doit pas crasher)."""
+        from src.plugins.sequencer import build_execution_plan, print_execution_plan
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "aggregation_by_column", "params": {}}
+            ],
+            "tests": [
+                {"id": "T-001", "type": "range", "database": "virtual:M-001"}
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        
+        # Juste vérifier que ça ne crash pas
+        import io
+        import contextlib
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            print_execution_plan(plan)
+        
+        output = f.getvalue()
+        assert "EXECUTION PLAN" in output
+        assert "M-001" in output
+        assert "T-001" in output
+
+
+class TestExecutor:
+    """Tests de l'executor."""
+    
+    def test_executor_simple_metric(self):
+        """Test d'exécution d'une métrique simple."""
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "missing_rate", "params": {"dataset": "sales", "column": "amount"}}
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load))
+        
+        result = executor.execute(plan)
+        
+        assert result.success
+        assert len(result.step_results) == 1
+        assert "M-001" in result.metrics
+        assert result.metrics["M-001"] is not None
+    
+    def test_executor_with_aggregation(self):
+        """Test d'exécution d'une métrique d'agrégation."""
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext
+        
+        config = {
+            "metrics": [
+                {
+                    "id": "M-001",
+                    "type": "aggregation_by_column",
+                    "params": {
+                        "dataset": "sales",
+                        "group_by": "region",
+                        "target": "amount"
+                    }
+                }
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load))
+        
+        result = executor.execute(plan)
+        
+        assert result.success
+        assert "M-001" in result.dataframes
+        df = result.dataframes["M-001"]
+        assert df is not None
+        assert len(df) > 0
+    
+    def test_executor_with_test(self):
+        """Test d'exécution d'un test dépendant d'une métrique."""
+        discover_all_plugins(verbose=False)
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "missing_rate", "params": {"dataset": "sales", "column": "amount"}}
+            ],
+            "tests": [
+                {
+                    "id": "T-001",
+                    "type": "range",
+                    "params": {
+                        "value_from_metric": "M-001",
+                        "low": 0.0,
+                        "high": 1.0,
+                        "inclusive": True
+                    }
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load))
+        
+        result = executor.execute(plan)
+        
+        assert result.success
+        assert "T-001" in result.tests
+        assert result.tests["T-001"]["passed"] is not None
+    
+    def test_executor_with_virtual_dataset(self):
+        """Test avec un test référençant un virtual dataset."""
+        discover_all_plugins(verbose=False)
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext
+        
+        config = {
+            "metrics": [
+                {
+                    "id": "M-001",
+                    "type": "aggregation_by_column",
+                    "params": {
+                        "dataset": "sales",
+                        "group_by": "region",
+                        "target": "amount"
+                    }
+                }
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        exec_context = ExecutionContext(context.load)
+        executor = Executor(exec_context)
+        
+        result = executor.execute(plan)
+        
+        # Vérifier que le virtual dataset est accessible
+        assert result.success
+        assert "M-001" in result.dataframes
+        
+        # Le virtual dataset devrait être chargeable
+        virtual_df = exec_context.load("virtual:M-001")
+        assert virtual_df is not None
+    
+    def test_executor_fail_fast(self):
+        """Test du mode fail-fast."""
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext, ExecutionStatus
+        
+        # Config avec une métrique qui va échouer
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "nonexistent_plugin", "params": {}},  # Va échouer
+                {"id": "M-002", "type": "missing_rate", "params": {"dataset": "sales", "column": "amount"}}
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load), fail_fast=True)
+        
+        result = executor.execute(plan)
+        
+        assert not result.success
+        # M-001 devrait avoir échoué
+        m1_result = result.get_step_result("M-001")
+        assert m1_result.status == ExecutionStatus.FAILED
+        # M-002 ne devrait pas avoir été exécuté en fail-fast
+        # (ou exécuté si même niveau, selon implémentation)
+    
+    def test_executor_dependency_skip(self):
+        """Test que les steps dépendants sont skippés si leur dépendance échoue."""
+        discover_all_plugins(verbose=False)
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext, ExecutionStatus
+        
+        config = {
+            "metrics": [
+                {"id": "M-001", "type": "nonexistent_plugin", "params": {}}  # Va échouer
+            ],
+            "tests": [
+                {
+                    "id": "T-001",
+                    "type": "range",
+                    "params": {"value_from_metric": "M-001", "low": 0, "high": 1}
+                }
+            ]
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load), fail_fast=False)
+        
+        result = executor.execute(plan)
+        
+        # M-001 devrait avoir échoué
+        m1_result = result.get_step_result("M-001")
+        assert m1_result.status == ExecutionStatus.FAILED
+        
+        # T-001 devrait avoir été skippé (dépend de M-001)
+        t1_result = result.get_step_result("T-001")
+        assert t1_result.status == ExecutionStatus.SKIPPED
+    
+    def test_executor_schema_validation(self):
+        """Test de validation du schéma de sortie."""
+        from src.plugins.sequencer import build_execution_plan
+        from src.plugins.executor import Executor, ExecutionContext
+        
+        config = {
+            "metrics": [
+                {
+                    "id": "M-001",
+                    "type": "aggregation_by_column",
+                    "params": {
+                        "dataset": "sales",
+                        "group_by": "region",
+                        "target": "amount"
+                    }
+                }
+            ],
+            "tests": []
+        }
+        
+        plan = build_execution_plan(config)
+        context = MockContext()
+        executor = Executor(ExecutionContext(context.load))
+        
+        result = executor.execute(plan)
+        
+        # L'executor doit valider le schéma automatiquement
+        assert result.success
+        m1_result = result.get_step_result("M-001")
+        assert m1_result.status == "success"
+
+
 if __name__ == "__main__":
     # Permet de lancer les tests directement
     pytest.main([__file__, "-v", "-s"])

@@ -359,6 +359,140 @@ def test_validation_invalid_column():
     return True, "Colonne invalide correctement rejetée"
 
 
+def test_sequencer_basic():
+    """Test 12: Séquenceur basique."""
+    from src.plugins.sequencer import build_execution_plan
+    
+    config = {
+        "metrics": [
+            {"id": "M-001", "type": "aggregation_by_column", "params": {}},
+            {"id": "M-002", "type": "missing_rate", "params": {}}
+        ],
+        "tests": [
+            {
+                "id": "T-001",
+                "type": "range",
+                "database": "virtual:M-001"
+            }
+        ]
+    }
+    
+    try:
+        plan = build_execution_plan(config)
+    except Exception as e:
+        return False, f"Erreur de séquençage: {e}"
+    
+    if len(plan.steps) != 3:
+        return False, f"Attendu 3 steps, obtenu {len(plan.steps)}"
+    
+    # T-001 doit dépendre de M-001
+    t_step = next((s for s in plan.steps if s.id == "T-001"), None)
+    if not t_step:
+        return False, "T-001 introuvable"
+    
+    if "M-001" not in t_step.depends_on:
+        return False, f"T-001 devrait dépendre de M-001, depends_on={t_step.depends_on}"
+    
+    return True, f"Plan avec {len(plan.steps)} steps, max_level={plan.max_level}"
+
+
+def test_sequencer_levels():
+    """Test 13: Niveaux du séquenceur."""
+    from src.plugins.sequencer import build_execution_plan
+    
+    config = {
+        "metrics": [
+            {"id": "M-001", "type": "aggregation_by_column", "params": {}}
+        ],
+        "tests": [
+            {"id": "T-001", "type": "range", "database": "virtual:M-001"}
+        ]
+    }
+    
+    plan = build_execution_plan(config)
+    
+    # M-001 doit être niveau 0
+    m_step = next((s for s in plan.steps if s.id == "M-001"), None)
+    if m_step.level != 0:
+        return False, f"M-001 devrait être niveau 0, obtenu {m_step.level}"
+    
+    # T-001 doit être niveau 1
+    t_step = next((s for s in plan.steps if s.id == "T-001"), None)
+    if t_step.level != 1:
+        return False, f"T-001 devrait être niveau 1, obtenu {t_step.level}"
+    
+    return True, "Niveaux correctement assignés"
+
+
+def test_executor_basic():
+    """Test 14: Executor basique."""
+    from src.plugins.sequencer import build_execution_plan
+    from src.plugins.executor import Executor, ExecutionContext
+    
+    config = {
+        "metrics": [
+            {"id": "M-001", "type": "missing_rate", "params": {"dataset": "test", "column": "amount"}}
+        ],
+        "tests": []
+    }
+    
+    plan = build_execution_plan(config)
+    context = SimpleContext()
+    executor = Executor(ExecutionContext(context.load))
+    
+    try:
+        result = executor.execute(plan)
+    except Exception as e:
+        return False, f"Erreur d'exécution: {e}"
+    
+    if not result.success:
+        return False, "Exécution échouée"
+    
+    if "M-001" not in result.metrics:
+        return False, "M-001 non trouvé dans les résultats"
+    
+    return True, f"Execution OK, missing_rate={result.metrics['M-001']:.2%}"
+
+
+def test_executor_with_aggregation():
+    """Test 15: Executor avec agrégation."""
+    from src.plugins.sequencer import build_execution_plan
+    from src.plugins.executor import Executor, ExecutionContext
+    
+    config = {
+        "metrics": [
+            {
+                "id": "M-001",
+                "type": "aggregation_by_column",
+                "params": {
+                    "dataset": "test",
+                    "group_by": "region",
+                    "target": "amount"
+                }
+            }
+        ],
+        "tests": []
+    }
+    
+    plan = build_execution_plan(config)
+    context = SimpleContext()
+    executor = Executor(ExecutionContext(context.load))
+    
+    result = executor.execute(plan)
+    
+    if not result.success:
+        return False, "Exécution échouée"
+    
+    if "M-001" not in result.dataframes:
+        return False, "DataFrame M-001 non trouvé"
+    
+    df = result.dataframes["M-001"]
+    if df is None or len(df) == 0:
+        return False, "DataFrame vide"
+    
+    return True, f"Aggregation OK, {len(df)} groupes"
+
+
 def main():
     print("=" * 70)
     print("TEST RAPIDE DU SYSTÈME DE PLUGINS")
@@ -399,6 +533,18 @@ def main():
     runner.run_test("5.2 - Dataset invalide rejeté", test_validation_invalid_dataset)
     runner.run_test("5.3 - Colonne invalide rejetée", test_validation_invalid_column)
     
+    # Section 6: Séquenceur
+    print("\n[SECTION 6] SÉQUENCEUR")
+    print("-" * 70)
+    runner.run_test("6.1 - Séquençage basique", test_sequencer_basic)
+    runner.run_test("6.2 - Assignation des niveaux", test_sequencer_levels)
+    
+    # Section 7: Executor
+    print("\n[SECTION 7] EXECUTOR")
+    print("-" * 70)
+    runner.run_test("7.1 - Exécution basique", test_executor_basic)
+    runner.run_test("7.2 - Exécution avec agrégation", test_executor_with_aggregation)
+    
     # Résumé final
     all_passed = runner.print_summary()
     
@@ -409,10 +555,14 @@ def main():
         print("  ✓ Schémas de sortie")
         print("  ✓ Catalogue virtuel")
         print("  ✓ Validation des tests")
+        print("  ✓ Séquenceur d'exécution")
+        print("  ✓ Executor end-to-end")  # 👈 NOUVEAU
         print("\nVous pouvez maintenant:")
-        print("  1. Ajouter de nouveaux plugins dans src/plugins/metrics/ ou /tests/")
+        print("  1. Tester le workflow complet: python demo_end_to_end.py")
         print("  2. Lancer les tests complets: pytest tests/test_plugin_system.py -v")
-        print("  3. Commencer l'intégration avec l'UI")
+        print("  3. Créer le vrai Context avec inventory.yaml")
+        print("  4. Construire l'API FastAPI")
+        print("  5. Adapter l'UI Dash")
         return 0
     else:
         print("\n⚠️  Corrigez les erreurs ci-dessus avant de continuer.")

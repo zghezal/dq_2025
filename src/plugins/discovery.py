@@ -86,76 +86,16 @@ def _import_module_from_path(module_path: Path) -> object:
     return module
 
 
-def _scan_directory(directory: Path, category: str) -> List[PluginInfo]:
-    """
-    Scanne un dossier pour découvrir les plugins.
-    
-    Args:
-        directory: Dossier à scanner
-        category: "metrics" ou "tests"
-    
-    Returns:
-        Liste des PluginInfo trouvés
-    """
-    discovered = []
-    
-    if not directory.exists():
-        print(f"[WARN] Directory {directory} n'existe pas, skip")
-        return discovered
-    
-    # Lister tous les fichiers .py (sauf __init__.py)
-    python_files = [
-        f for f in directory.glob("*.py")
-        if f.name != "__init__.py"
-    ]
-    
-    for py_file in python_files:
-        try:
-            # Sauvegarder la taille du REGISTRY avant import
-            before_count = len(REGISTRY)
-            
-            # Importer le module
-            module = _import_module_from_path(py_file)
-            
-            # Voir quels nouveaux plugins ont été enregistrés
-            after_count = len(REGISTRY)
-            new_count = after_count - before_count
-            
-            if new_count > 0:
-                # Trouver les nouveaux plugins ajoutés
-                # (on suppose qu'ils ont été ajoutés à la fin, ce qui est vrai
-                # avec notre décorateur @register)
-                for plugin_id, plugin_class in list(REGISTRY.items())[-new_count:]:
-                    info = PluginInfo(
-                        plugin_id=plugin_id,
-                        plugin_class=plugin_class,
-                        module_path=str(py_file),
-                        category=category
-                    )
-                    discovered.append(info)
-                    print(f"[OK] Discovered {category} plugin: {plugin_id} from {py_file.name}")
-            else:
-                print(f"[WARN] No plugin registered in {py_file.name}")
-                
-        except Exception as e:
-            print(f"[ERROR] Failed to import {py_file}: {e}")
-            continue
-    
-    return discovered
-
-
-def discover_all_plugins(verbose: bool = True) -> Dict[str, PluginInfo]:
+def discover_all_plugins(verbose: bool = True, force_rescan: bool = False) -> Dict[str, PluginInfo]:
     """
     Découvre tous les plugins dans src/plugins/metrics/ et src/plugins/tests/.
     
-    Cette fonction:
-    1. Scanne les dossiers metrics/ et tests/
-    2. Importe tous les fichiers .py trouvés
-    3. Enregistre automatiquement les plugins (via @register)
-    4. Retourne un dictionnaire {plugin_id: PluginInfo}
+    Cette fonction utilise un cache pour éviter de scanner plusieurs fois.
+    Si les plugins ont déjà été découverts, retourne le cache.
     
     Args:
         verbose: Si True, affiche les logs de découverte
+        force_rescan: Si True, force un nouveau scan même si cache existe
     
     Returns:
         Dict mapping plugin_id -> PluginInfo pour tous les plugins découverts
@@ -165,20 +105,32 @@ def discover_all_plugins(verbose: bool = True) -> Dict[str, PluginInfo]:
         >>> print(plugins.keys())
         dict_keys(['missing_rate', 'range', 'aggregation_by_region'])
     """
+    global _discovery_cache
+    
+    # Utiliser le cache si disponible et pas de force_rescan
+    if _discovery_cache is not None and not force_rescan:
+        return _discovery_cache
+    
+    # Scanner
     if not verbose:
         # Désactiver temporairement les prints
         import io
         import contextlib
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
-            return _discover_all_plugins_impl()
+            result = _discover_all_plugins_impl()
     else:
-        return _discover_all_plugins_impl()
+        result = _discover_all_plugins_impl()
+    
+    # Mettre en cache
+    _discovery_cache = result
+    return result
 
 
 def _discover_all_plugins_impl() -> Dict[str, PluginInfo]:
     """Implémentation interne de discover_all_plugins."""
-    all_discovered: Dict[str, PluginInfo] = {}
+    # Tracker les fichiers scannés pour savoir quelle catégorie ils appartiennent
+    file_to_category: Dict[str, str] = {}
     
     directories = _get_plugin_directories()
     
@@ -186,15 +138,54 @@ def _discover_all_plugins_impl() -> Dict[str, PluginInfo]:
     print("PLUGIN DISCOVERY START")
     print("=" * 60)
     
+    # Scanner tous les dossiers et importer les modules
     for category, directory in directories.items():
         print(f"\n[INFO] Scanning {category} directory: {directory}")
-        discovered = _scan_directory(directory, category)
         
-        for info in discovered:
-            if info.plugin_id in all_discovered:
-                print(f"[WARN] Duplicate plugin_id '{info.plugin_id}' - keeping first occurrence")
-            else:
-                all_discovered[info.plugin_id] = info
+        if not directory.exists():
+            print(f"[WARN] Directory {directory} n'existe pas, skip")
+            continue
+        
+        # Lister tous les fichiers .py (sauf __init__.py)
+        python_files = [
+            f for f in directory.glob("*.py")
+            if f.name != "__init__.py"
+        ]
+        
+        for py_file in python_files:
+            try:
+                # Importer le module (ça va populer REGISTRY via @register)
+                module = _import_module_from_path(py_file)
+                file_to_category[str(py_file)] = category
+                print(f"[OK] Imported {py_file.name}")
+            except Exception as e:
+                print(f"[ERROR] Failed to import {py_file}: {e}")
+                continue
+    
+    # Maintenant construire le dict de PluginInfo depuis REGISTRY
+    # On ne peut pas vraiment savoir quel fichier a créé quel plugin,
+    # donc on va juste catégoriser par convention de nommage
+    all_discovered: Dict[str, PluginInfo] = {}
+    
+    for plugin_id, plugin_class in REGISTRY.items():
+        # Essayer de deviner la catégorie depuis le group ou le plugin_id
+        group = getattr(plugin_class, 'group', '').lower()
+        if 'validation' in group or 'test' in group or plugin_id.startswith('test.'):
+            category = "tests"
+        else:
+            category = "metrics"
+        
+        # On ne connaît pas vraiment le module_path, mettre un placeholder
+        module_path = f"<discovered from {category}>"
+        
+        info = PluginInfo(
+            plugin_id=plugin_id,
+            plugin_class=plugin_class,
+            module_path=module_path,
+            category=category
+        )
+        all_discovered[plugin_id] = info
+        print(f"[OK] Registered {category} plugin: {plugin_id}")
     
     print("\n" + "=" * 60)
     print(f"DISCOVERY COMPLETE: {len(all_discovered)} plugins found")
