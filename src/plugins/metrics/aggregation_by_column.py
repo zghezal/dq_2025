@@ -2,7 +2,7 @@
 Plugin Aggregation By Column - Métrique d'agrégation.
 
 Agrège un dataset par une colonne de grouping et calcule des statistiques
-sur une colonne cible.
+sur une colonne cible. Utilise PySpark pour des calculs distribués.
 
 Cette métrique PRODUIT un dataset avec des colonnes, donc:
 - output_schema() retourne OutputSchema avec les colonnes résultantes
@@ -11,7 +11,7 @@ Cette métrique PRODUIT un dataset avec des colonnes, donc:
 
 from typing import Dict, Any
 from pydantic import BaseModel, Field
-import pandas as pd
+from pyspark.sql import functions as F
 
 from src.plugins.base import BasePlugin, Result, register
 from src.plugins.output_schema import OutputSchema, OutputColumn
@@ -34,7 +34,10 @@ class AggregationByColumnParams(BaseModel):
 @register
 class AggregationByColumn(BasePlugin):
     """
-    Métrique d'agrégation qui groupe par une colonne et calcule des stats.
+    Métrique d'agrégation qui groupe par une colonne et calcule des stats avec Spark.
+    
+    Utilise l'API PySpark pour des agrégations distribuées sans charger toutes 
+    les données en mémoire. Seul le résultat agrégé (généralement petit) est collecté.
     
     Produit un dataset avec colonnes:
     - {group_by}: valeur du groupe
@@ -118,14 +121,19 @@ class AggregationByColumn(BasePlugin):
     
     def run(self, context, **params) -> Result:
         """
-        Exécute l'agrégation.
+        Exécute l'agrégation avec Spark.
+        
+        Args:
+            context: Context qui fournit accès aux datasets via context.load()
+                    Doit retourner un pyspark.sql.DataFrame
+            **params: Paramètres validés par AggregationByColumnParams
         
         Returns:
-            Result avec dataframe contenant les résultats agrégés
+            Result avec dataframe contenant les résultats agrégés (Pandas)
         """
         p = self.ParamsModel(**params)
         
-        # Charger le dataset
+        # Charger le dataset (Spark DataFrame attendu)
         df = context.load(p.dataset)
         
         # Vérifier que les colonnes existent
@@ -143,28 +151,22 @@ class AggregationByColumn(BasePlugin):
                 meta={"error": "target_not_found"}
             )
         
-        # Effectuer l'agrégation
-        agg_df = df.groupby(p.group_by).agg(
-            count=(p.target, 'count'),
-            sum_target=(p.target, 'sum'),
-            avg_target=(p.target, 'mean'),
-            min_target=(p.target, 'min'),
-            max_target=(p.target, 'max')
-        ).reset_index()
+        # Effectuer l'agrégation avec Spark (distribué)
+        agg_spark = df.groupBy(p.group_by).agg(
+            F.count("*").alias("count"),
+            F.sum(p.target).alias(f"sum_{p.target}"),
+            F.avg(p.target).alias(f"avg_{p.target}"),
+            F.min(p.target).alias(f"min_{p.target}"),
+            F.max(p.target).alias(f"max_{p.target}")
+        )
         
-        # Renommer les colonnes pour correspondre au schéma
-        agg_df.columns = [
-            p.group_by,
-            'count',
-            f'sum_{p.target}',
-            f'avg_{p.target}',
-            f'min_{p.target}',
-            f'max_{p.target}'
-        ]
+        # Collecter SEULEMENT le résultat agrégé (généralement petit DataFrame)
+        # Conversion en Pandas pour compatibilité avec le reste du système
+        agg_pandas = agg_spark.toPandas()
         
         # Valider que le dataframe correspond au schéma prédit
         expected_schema = self.output_schema(params)
-        actual_columns = list(agg_df.columns)
+        actual_columns = list(agg_pandas.columns)
         validation_errors = expected_schema.validate_actual_output(actual_columns)
         
         if validation_errors:
@@ -176,12 +178,12 @@ class AggregationByColumn(BasePlugin):
         
         return Result(
             passed=None,
-            dataframe=agg_df,
-            message=f"Aggregation complete: {len(agg_df)} groups",
+            dataframe=agg_pandas,
+            message=f"Aggregation complete: {len(agg_pandas)} groups",
             meta={
                 "dataset": p.dataset,
                 "group_by": p.group_by,
                 "target": p.target,
-                "num_groups": len(agg_df)
+                "num_groups": len(agg_pandas)
             }
         )

@@ -2,6 +2,7 @@
 Plugin Missing Rate - Métrique de profiling.
 
 Calcule le taux de valeurs manquantes (NaN/NULL) pour une colonne ou un dataset entier.
+Utilise PySpark pour des calculs distribués.
 
 Ce plugin produit une valeur scalaire simple (pas de colonnes), donc:
 - output_schema() retourne None
@@ -10,6 +11,7 @@ Ce plugin produit une valeur scalaire simple (pas de colonnes), donc:
 
 from typing import Optional
 from pydantic import BaseModel, Field
+from pyspark.sql import functions as F
 from src.plugins.base import BasePlugin, Result, register
 
 
@@ -33,7 +35,9 @@ class MissingRateParams(BaseModel):
 @register
 class MissingRate(BasePlugin):
     """
-    Métrique Missing Rate - calcule le taux de valeurs manquantes.
+    Métrique Missing Rate - calcule le taux de valeurs manquantes avec Spark.
+    
+    Utilise l'API PySpark pour des calculs distribués sans charger les données en mémoire.
     
     Exemples d'usage:
         # Taux de missing sur une colonne spécifique
@@ -56,10 +60,11 @@ class MissingRate(BasePlugin):
     
     def run(self, context, **params) -> Result:
         """
-        Exécute le calcul de missing rate.
+        Exécute le calcul de missing rate avec Spark.
         
         Args:
             context: Context qui fournit accès aux datasets via context.load()
+                    Doit retourner un pyspark.sql.DataFrame
             **params: Paramètres validés par MissingRateParams
         
         Returns:
@@ -68,7 +73,7 @@ class MissingRate(BasePlugin):
         # Valider les paramètres
         p = self.ParamsModel(**params)
         
-        # Charger le dataset
+        # Charger le dataset (Spark DataFrame attendu)
         df = context.load(p.dataset)
         
         # Calculer le taux de missing
@@ -82,19 +87,38 @@ class MissingRate(BasePlugin):
                     meta={"error": "column_not_found"}
                 )
             
-            total = len(df)
+            # Compter total et nulls avec Spark en UNE SEULE passe
+            stats = df.agg(
+                F.count("*").alias("total"),
+                F.sum(
+                    F.when(F.col(p.column).isNull(), 1).otherwise(0)
+                ).alias("missing")
+            ).collect()[0]
+            
+            total = stats["total"]
+            missing = stats["missing"]
+            
             if total == 0:
                 rate = 0.0
             else:
-                missing = df[p.column].isna().sum()
                 rate = float(missing) / float(total)
+        
         else:
             # Missing rate sur le dataset entier
-            total_cells = df.size
-            if total_cells == 0:
+            # Compter les nulls dans toutes les colonnes
+            total_rows = df.count()
+            
+            if total_rows == 0:
                 rate = 0.0
             else:
-                missing_cells = df.isna().sum().sum()
+                # Pour chaque colonne, compter les nulls
+                null_counts = []
+                for col_name in df.columns:
+                    null_count = df.filter(F.col(col_name).isNull()).count()
+                    null_counts.append(null_count)
+                
+                total_cells = total_rows * len(df.columns)
+                missing_cells = sum(null_counts)
                 rate = float(missing_cells) / float(total_cells)
         
         return Result(

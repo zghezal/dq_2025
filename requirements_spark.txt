@@ -1,0 +1,13 @@
+# Requirements pour plugins Spark-natifs
+
+# PySpark - Framework de calcul distribué
+pyspark>=3.5.0
+
+# Dépendances existantes (garder les vôtres)
+pydantic>=2.0.0
+pandas>=2.0.0
+pyyaml>=6.0
+
+# Optionnel : pour développement
+pytest>=7.0.0
+black>=23.0.0
