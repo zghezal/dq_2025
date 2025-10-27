@@ -874,9 +874,9 @@ def register_build_callbacks(app):
                 params_content = [
                     dbc.Row([
                         dbc.Col([
-                            html.Label("Valeur Min"),
+                            html.Label("Valeur Min (low)"),
                             dcc.Input(
-                                id={"role": "test-min"},
+                                id={"role": "test-low"},
                                 type="text",
                                 value="0",
                                 placeholder="Ex: 0",
@@ -886,9 +886,9 @@ def register_build_callbacks(app):
                             )
                         ], md=6),
                         dbc.Col([
-                            html.Label("Valeur Max"),
+                            html.Label("Valeur Max (high)"),
                             dcc.Input(
-                                id={"role": "test-max"},
+                                id={"role": "test-high"},
                                 type="text",
                                 value="100",
                                 placeholder="Ex: 100",
@@ -1022,15 +1022,15 @@ def register_build_callbacks(app):
         Input({"role": "test-db"}, "value", ALL),
         Input({"role": "test-col"}, "value", ALL),
         Input({"role": "test-metric"}, "value", ALL),
-        Input({"role": "test-min"}, "value", ALL),
-        Input({"role": "test-max"}, "value", ALL),
+        Input({"role": "test-low"}, "value", ALL),
+        Input({"role": "test-high"}, "value", ALL),
         Input({"role": "test-pattern"}, "value", ALL),
         Input({"role": "test-ref-db"}, "value", ALL),
         Input({"role": "test-ref-col"}, "value", ALL),
         State("store_tests", "data"),
         prevent_initial_call=True
     )
-    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list, tests):
+    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list, tests):
         """Génère la prévisualisation JSON du test"""
         if not ttype:
             return "", False, ""
@@ -1052,7 +1052,7 @@ def register_build_callbacks(app):
             tid = None
         db, col = first_with_default(db_list), first_with_default(col_list)
         metric = first_with_default(metric_list)
-        vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
+        low, high = first_with_default(low_list), first_with_default(high_list)
         pat = first_with_default(pat_list)
         refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
 
@@ -1063,13 +1063,14 @@ def register_build_callbacks(app):
             "sample_on_fail": ("yes" in (sof or []))
         }
         if ttype == "range":
-            # Si une métrique est sélectionnée, utiliser la métrique
+            # Architecture unifiée: database peut être un nom normal OU virtual:M-XXX
             if metric:
-                obj.update({"metric": metric})
+                # Convertir la métrique en virtual dataset
+                obj.update({"database": f"virtual:{metric}", "column": col or ""})
             else:
                 obj.update({"database": db or "", "column": col or ""})
             
-            obj.update({"min": vmin, "max": vmax})
+            obj.update({"low": low, "high": high, "inclusive": True})
         # If tid provided, check whether it's already used
         if tid:
             existing_ids = {x.get("id") for x in (tests or []) if x.get("id")}
@@ -1093,13 +1094,13 @@ def register_build_callbacks(app):
         State({"role": "test-db"}, "value", ALL),
         State({"role": "test-col"}, "value", ALL),
         State({"role": "test-metric"}, "value", ALL),
-        State({"role": "test-min"}, "value", ALL),
-        State({"role": "test-max"}, "value", ALL),
+        State({"role": "test-low"}, "value", ALL),
+        State({"role": "test-high"}, "value", ALL),
         State({"role": "test-pattern"}, "value", ALL),
         State({"role": "test-ref-db"}, "value", ALL),
         State({"role": "test-ref-col"}, "value", ALL),
     )
-    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
+    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list):
         """Ajoute un test au store et met à jour la liste"""
         if not n:
             return "", tests, "", no_update
@@ -1124,7 +1125,7 @@ def register_build_callbacks(app):
             tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
             db, col = first_with_default(db_list), first_with_default(col_list)
             metric = first_with_default(metric_list)
-            vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
+            low, high = first_with_default(low_list), first_with_default(high_list)
             pat = first_with_default(pat_list)
             refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
             # Normalize tid input: accept numeric or T-<num>
@@ -1137,13 +1138,14 @@ def register_build_callbacks(app):
                 except Exception:
                     t["id"] = None
             if ttype == "range":
-                # Si une métrique est sélectionnée, utiliser la métrique
+                # Architecture unifiée: database peut être un nom normal OU virtual:M-XXX
                 if metric:
-                    t.update({"metric": metric})
+                    # Convertir la métrique en virtual dataset
+                    t.update({"database": f"virtual:{metric}", "column": col or ""})
                 else:
                     t.update({"database": db or "", "column": col or ""})
                 
-                t.update({"min": vmin, "max": vmax})
+                t.update({"low": low, "high": high, "inclusive": True})
         
         tests = (tests or [])
         existing_ids = {x.get("id") for x in tests}
@@ -1281,12 +1283,12 @@ def register_build_callbacks(app):
                 source_info = t.get("database", "-")
                 column_info = t.get("column", "-")
             
-            # Extraire min/max pour les tests range
+            # Extraire low/high pour les tests range
             range_info = "-"
             if t.get("type") == "range":
-                vmin = t.get("min", "?")
-                vmax = t.get("max", "?")
-                range_info = f"[{vmin}, {vmax}]"
+                low_val = t.get("low", "?")
+                high_val = t.get("high", "?")
+                range_info = f"[{low_val}, {high_val}]"
             
             actions = html.Div([
                 dbc.Button(

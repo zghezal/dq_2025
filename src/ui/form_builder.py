@@ -6,7 +6,14 @@ def _choices_from_source(source, context, depends_value=None):
         return [{"label": a, "value": a} for a in getattr(context, "aliases", [])]
     if source == "metrics":
         return [{"label": m, "value": m} for m in getattr(context, "metric_ids", [])]
+    if source == "databases_and_metrics":
+        databases = [{"label": f"📊 {a}", "value": a} for a in getattr(context, "aliases", [])]
+        metrics = [{"label": f"🔢 virtual:{m}", "value": f"virtual:{m}"} for m in getattr(context, "metric_ids", [])]
+        return databases + metrics
     if source == "columns" and depends_value:
+        cols = context.columns_for(depends_value) if hasattr(context, "columns_for") else []
+        return [{"label": c, "value": c} for c in cols]
+    if source == "columns_for_database" and depends_value:
         cols = context.columns_for(depends_value) if hasattr(context, "columns_for") else []
         return [{"label": c, "value": c} for c in cols]
     return []
