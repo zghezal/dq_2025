@@ -168,7 +168,17 @@ def register_build_callbacks(app):
         prevent_initial_call='initial_duplicate'
     )
     def update_dataset_options(search, inv_store_data, current_data):
-        """Met à jour les datasets disponibles selon le contexte et auto-charge le store"""
+        """
+        Met à jour les datasets disponibles selon le contexte et auto-charge le store.
+        
+        Flux:
+        1. Si inventory store disponible → Utiliser les données du store
+        2. Sinon, charger directement depuis l'URL (stream/project/zone) via inventory
+        """
+        from src.inventory import get_datasets_for_zone
+        from flask import current_app
+        from src.spark_inventory_adapter import register_inventory_datasets_in_spark
+        
         print(f"[DEBUG] ⭐ update_dataset_options APPELÉ !")
         print(f"[DEBUG]   - search={search}")
         print(f"[DEBUG]   - inv_store_data={inv_store_data}")
@@ -182,7 +192,7 @@ def register_build_callbacks(app):
         
         print(f"[DEBUG]   - Parsed: stream={stream}, project={projet}, zone={zone}")
         
-        # Use inventory store data (populated at select-dq-point)
+        # Cas 1: Store disponible → Utiliser directement
         if inv_store_data and isinstance(inv_store_data, dict):
             items = inv_store_data.get("datasets", []) or []
             inv_zone = inv_store_data.get("zone")
@@ -191,7 +201,7 @@ def register_build_callbacks(app):
             names = [it.get("name") or it.get("alias") for it in items]
             options = [{"label": n, "value": n} for n in names]
 
-            print(f"[DEBUG] Inventory store has {len(items)} datasets: {[it.get('alias') for it in items]}")
+            print(f"[DEBUG] ✅ Inventory store has {len(items)} datasets: {[it.get('alias') for it in items]}")
 
             # Auto-load datasets when:
             # 1. Store is empty (first load)
@@ -212,8 +222,35 @@ def register_build_callbacks(app):
             print(f"[DEBUG] Returning {len(options)} options from inventory, current_data unchanged")
             return options, current_data or no_update
 
-        # No inventory data available - return empty
-        print(f"[DEBUG] No inventory data available, returning empty options")
+        # Cas 2: Store vide mais URL contient stream/project/zone → Charger depuis inventory
+        if stream and projet and zone:
+            print(f"[DEBUG] 🔄 Store vide, chargement depuis inventory: {stream}/{projet}/{zone}")
+            datasets = get_datasets_for_zone(zone, stream_id=stream, project_id=projet) or []
+            
+            if datasets:
+                # Enregistrer dans Spark
+                spark_ctx = getattr(current_app, 'spark_context', None)
+                if spark_ctx:
+                    try:
+                        register_inventory_datasets_in_spark(spark_ctx, datasets)
+                        print(f"[DEBUG] ✅ {len(datasets)} datasets enregistrés dans Spark catalog")
+                    except Exception as e:
+                        print(f"[DEBUG] ⚠️ Erreur lors de l'enregistrement Spark: {e}")
+                
+                # Construire options et auto-load
+                names = [d.get("name") or d.get("alias") for d in datasets]
+                options = [{"label": n, "value": n} for n in names]
+                
+                auto_data = []
+                for d, name in zip(datasets, names):
+                    alias = d.get("alias") or (name and name.split(".")[0].lower())
+                    auto_data.append({"alias": alias, "dataset": name})
+                
+                print(f"[DEBUG] ✅ Chargement direct réussi: {len(auto_data)} datasets depuis inventory")
+                return options, auto_data
+
+        # Aucune donnée disponible
+        print(f"[DEBUG] ⚠️ No inventory data available, returning empty options")
         return [], current_data or no_update
 
     @app.callback(
