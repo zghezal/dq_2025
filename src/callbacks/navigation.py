@@ -222,8 +222,14 @@ def register_navigation_callbacks(app):
 
         Utilise `config/inventory.yaml` via `src.inventory.get_datasets_for_zone`.
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
+        
+        IMPORTANT: Enregistre automatiquement les datasets dans le catalog Spark
+        pour permettre l'accès dynamique aux schémas et données.
         """
         from dash import html, no_update
+        from flask import current_app
+        from src.spark_inventory_adapter import register_inventory_datasets_in_spark
+        
         print(f"[DEBUG] populate_datasets_for_zone called: zone={zone_id}, search={search}")
         
         if not zone_id:
@@ -242,6 +248,15 @@ def register_navigation_callbacks(app):
         datasets = get_datasets_for_zone(zone_id, stream_id=stream_id, project_id=project_id) or []
         
         print(f"[DEBUG] Found {len(datasets)} datasets: {[d.get('alias') for d in datasets]}")
+        
+        # 🔥 NOUVEAU: Enregistrer les datasets dans le catalog Spark
+        spark_ctx = getattr(current_app, 'spark_context', None)
+        if spark_ctx and datasets:
+            try:
+                register_inventory_datasets_in_spark(spark_ctx, datasets)
+                print(f"[DEBUG] ✅ {len(datasets)} datasets enregistrés dans Spark catalog")
+            except Exception as e:
+                print(f"[DEBUG] ⚠️ Erreur lors de l'enregistrement Spark: {e}")
 
         store_payload = {"zone": zone_id, "datasets": datasets}
 

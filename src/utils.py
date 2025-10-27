@@ -27,50 +27,82 @@ def list_project_datasets(stream=None, projet=None, dq_point=None):
 
 
 def get_columns_for_dataset(ds_name):
-    """Récupère les colonnes d'un dataset (via Dataiku ou fichier CSV/Parquet local)"""
+    """
+    Récupère les colonnes d'un dataset dynamiquement depuis Spark.
+    
+    Ordre de priorité:
+    1. SparkDQContext (si disponible) - RECOMMANDÉ pour lecture dynamique
+    2. Dataiku Dataset (production)
+    3. Lecture fichier local (fallback)
+    
+    Args:
+        ds_name: Nom ou alias du dataset
+    
+    Returns:
+        Liste des noms de colonnes
+    """
+    # 1. Essayer avec SparkDQContext (recommandé)
+    try:
+        from flask import current_app
+        spark_ctx = getattr(current_app, 'spark_context', None)
+        
+        if spark_ctx and ds_name in spark_ctx.catalog:
+            print(f"[DEBUG] ✅ Colonnes récupérées depuis Spark pour '{ds_name}'")
+            return spark_ctx.get_columns(ds_name)
+    except Exception as e:
+        print(f"[DEBUG] Spark lookup failed for '{ds_name}': {e}")
+    
+    # 2. Essayer avec Dataiku (production)
     try:
         ds = dataiku.Dataset(ds_name)
         schema = ds.read_schema() or []
-        return [c.get("name") for c in schema if c.get("name")]
-    except Exception:
-        import csv
-        import os
-        
-        # Try multiple possible locations for the dataset file
-        possible_paths = [
-            f"sourcing/input/{ds_name}",  # Inventory path with extension
-            f"./datasets/{ds_name}",       # Legacy path with extension  
-            f"sourcing/input/{ds_name}.csv",  # Inventory path + .csv
-            f"./datasets/{ds_name}.csv",      # Legacy path + .csv
-            f"sourcing/input/{ds_name}.parquet",  # Inventory path + .parquet
-            f"./datasets/{ds_name}.parquet",      # Legacy path + .parquet
-        ]
-        
-        for file_path in possible_paths:
-            if os.path.exists(file_path):
-                # Handle parquet files
-                if file_path.endswith('.parquet'):
-                    try:
-                        import pandas as pd
-                        df = pd.read_parquet(file_path)
-                        return df.columns.tolist()
-                    except Exception as e:
-                        print(f"[DEBUG] Error reading parquet {file_path}: {e}")
-                        continue
-                
-                # Handle CSV files
+        columns = [c.get("name") for c in schema if c.get("name")]
+        if columns:
+            print(f"[DEBUG] Colonnes récupérées depuis Dataiku pour '{ds_name}'")
+            return columns
+    except Exception as e:
+        print(f"[DEBUG] Dataiku lookup failed for '{ds_name}': {e}")
+    
+    # 3. Fallback: lecture fichier local
+    import csv
+    import os
+    
+    possible_paths = [
+        f"sourcing/input/{ds_name}",  # Inventory path with extension
+        f"./datasets/{ds_name}",       # Legacy path with extension  
+        f"sourcing/input/{ds_name}.csv",  # Inventory path + .csv
+        f"./datasets/{ds_name}.csv",      # Legacy path + .csv
+        f"sourcing/input/{ds_name}.parquet",  # Inventory path + .parquet
+        f"./datasets/{ds_name}.parquet",      # Legacy path + .parquet
+    ]
+    
+    for file_path in possible_paths:
+        if os.path.exists(file_path):
+            # Handle parquet files
+            if file_path.endswith('.parquet'):
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        reader = csv.reader(f)
-                        headers = next(reader, [])
-                        if headers:  # Only return if we found headers
-                            return headers
+                    import pandas as pd
+                    df = pd.read_parquet(file_path)
+                    print(f"[DEBUG] Colonnes récupérées depuis fichier Parquet: {file_path}")
+                    return df.columns.tolist()
                 except Exception as e:
-                    print(f"[DEBUG] Error reading CSV {file_path}: {e}")
+                    print(f"[DEBUG] Error reading parquet {file_path}: {e}")
                     continue
-        
-        print(f"[DEBUG] No valid file found for dataset: {ds_name}")
-        return []
+            
+            # Handle CSV files
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    headers = next(reader, [])
+                    if headers:  # Only return if we found headers
+                        print(f"[DEBUG] Colonnes récupérées depuis fichier CSV: {file_path}")
+                        return headers
+            except Exception as e:
+                print(f"[DEBUG] Error reading CSV {file_path}: {e}")
+                continue
+    
+    print(f"[DEBUG] ⚠️ Aucune colonne trouvée pour: {ds_name}")
+    return []
 
 
 def safe_id(s):

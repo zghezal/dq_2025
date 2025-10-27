@@ -154,7 +154,10 @@ class SparkDQContext:
     
     def get_columns(self, alias: str) -> list:
         """
-        Récupère la liste des colonnes d'un dataset (sans charger les données).
+        Récupère la liste des colonnes d'un dataset (MÉTADONNÉES UNIQUEMENT, pas de scan).
+        
+        Cette méthode lit seulement le schéma sans déclencher de scan complet des données.
+        Optimisé pour l'exploration rapide des structures de datasets.
         
         Args:
             alias: Alias du dataset
@@ -162,8 +165,59 @@ class SparkDQContext:
         Returns:
             Liste des noms de colonnes
         """
-        df = self.load(alias)
-        return df.columns
+        return self.peek_schema(alias)
+    
+    def peek_schema(self, alias: str) -> list:
+        """
+        Lit le schéma d'un dataset SANS scanner les données (métadonnées seulement).
+        
+        Optimisé pour récupérer rapidement les colonnes sans overhead de calcul.
+        Ne déclenche PAS df.count() ou autres actions Spark coûteuses.
+        
+        Args:
+            alias: Alias du dataset
+        
+        Returns:
+            Liste des noms de colonnes
+            
+        Raises:
+            ValueError: Si l'alias n'existe pas dans le catalogue
+        """
+        if alias not in self.catalog:
+            raise ValueError(
+                f"Dataset '{alias}' introuvable dans le catalogue. "
+                f"Disponibles: {list(self.catalog.keys())}"
+            )
+        
+        source = self.catalog[alias]
+        
+        # Cas 1 : Pandas DataFrame → Colonnes directement accessibles
+        if isinstance(source, pd.DataFrame):
+            self.logger.info(f"📋 Schéma Pandas pour '{alias}': {len(source.columns)} colonnes")
+            return source.columns.tolist()
+        
+        # Cas 2 : Fichier Parquet → Lecture schéma seulement
+        elif isinstance(source, str) and source.endswith('.parquet'):
+            self.logger.info(f"📋 Lecture schéma Parquet: {source}")
+            df = self.spark.read.parquet(source)
+            return df.columns
+        
+        # Cas 3 : Fichier CSV → Lecture schéma seulement
+        elif isinstance(source, str) and source.endswith('.csv'):
+            self.logger.info(f"📋 Lecture schéma CSV: {source}")
+            df = self.spark.read.csv(source, header=True, inferSchema=True)
+            return df.columns
+        
+        # Cas 4 : Table Hive/Delta → Lecture schéma depuis metastore
+        elif isinstance(source, str):
+            self.logger.info(f"📋 Lecture schéma table: {source}")
+            df = self.spark.table(source)
+            return df.columns
+        
+        else:
+            raise ValueError(
+                f"Type de source non supporté pour '{alias}': {type(source)}"
+            )
     
     def clear_cache(self):
         """
