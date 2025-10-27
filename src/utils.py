@@ -27,7 +27,7 @@ def list_project_datasets(stream=None, projet=None, dq_point=None):
 
 
 def get_columns_for_dataset(ds_name):
-    """Récupère les colonnes d'un dataset (via Dataiku ou fichier CSV local)"""
+    """Récupère les colonnes d'un dataset (via Dataiku ou fichier CSV/Parquet local)"""
     try:
         ds = dataiku.Dataset(ds_name)
         schema = ds.read_schema() or []
@@ -42,20 +42,34 @@ def get_columns_for_dataset(ds_name):
             f"./datasets/{ds_name}",       # Legacy path with extension  
             f"sourcing/input/{ds_name}.csv",  # Inventory path + .csv
             f"./datasets/{ds_name}.csv",      # Legacy path + .csv
+            f"sourcing/input/{ds_name}.parquet",  # Inventory path + .parquet
+            f"./datasets/{ds_name}.parquet",      # Legacy path + .parquet
         ]
         
-        for csv_path in possible_paths:
-            if os.path.exists(csv_path):
+        for file_path in possible_paths:
+            if os.path.exists(file_path):
+                # Handle parquet files
+                if file_path.endswith('.parquet'):
+                    try:
+                        import pandas as pd
+                        df = pd.read_parquet(file_path)
+                        return df.columns.tolist()
+                    except Exception as e:
+                        print(f"[DEBUG] Error reading parquet {file_path}: {e}")
+                        continue
+                
+                # Handle CSV files
                 try:
-                    with open(csv_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, 'r', encoding='utf-8') as f:
                         reader = csv.reader(f)
                         headers = next(reader, [])
                         if headers:  # Only return if we found headers
                             return headers
                 except Exception as e:
-                    print(f"[DEBUG] Error reading {csv_path}: {e}")
+                    print(f"[DEBUG] Error reading CSV {file_path}: {e}")
                     continue
         
+        print(f"[DEBUG] No valid file found for dataset: {ds_name}")
         return []
 
 
