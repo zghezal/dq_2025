@@ -922,39 +922,6 @@ def register_build_callbacks(app):
                 dbc.CardBody(params_content if params_content else [html.P("Aucun paramètre spécifique pour ce type", className="text-muted")])
             ], className="mb-3") if params_content else html.Div()
             
-            # Groupe 4: Seuils et tolérance
-            threshold_card = dbc.Card([
-                dbc.CardHeader("📊 Seuils et tolérance"),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.Label("Opérateur"),
-                            dcc.Dropdown(
-                                id={"role": "test-op"},
-                                options=[{"label": x, "value": x} for x in ["<=", "<", ">=", ">", "=", "!="]],
-                                value="<=",
-                                clearable=False,
-                                persistence=True,
-                                persistence_type="session"
-                            )
-                        ], md=6),
-                        dbc.Col([
-                            html.Label("Valeur seuil"),
-                            dcc.Input(
-                                id={"role": "test-thr"},
-                                type="text",
-                                value="0.005",
-                                placeholder="Ex: 0.01 (1%)",
-                                persistence=True,
-                                persistence_type="session",
-                                autoComplete="off"
-                            ),
-                            html.Small("Ex: 0.005 = 0.5%", className="text-muted")
-                        ], md=6),
-                    ])
-                ])
-            ], className="mb-3")
-            
             # Prévisualisation
             preview = dbc.Card([
                 dbc.CardHeader("👁️ Prévisualisation"),
@@ -966,7 +933,7 @@ def register_build_callbacks(app):
                 ])
             ])
             
-            return html.Div([id_card, target_card, params_card, threshold_card, preview])
+            return html.Div([id_card, target_card, params_card, preview])
 
         return dbc.Alert("Type non géré pour l'instant.", color="warning")
 
@@ -1055,8 +1022,6 @@ def register_build_callbacks(app):
         Input({"role": "test-db"}, "value", ALL),
         Input({"role": "test-col"}, "value", ALL),
         Input({"role": "test-metric"}, "value", ALL),
-        Input({"role": "test-op"}, "value", ALL),
-        Input({"role": "test-thr"}, "value", ALL),
         Input({"role": "test-min"}, "value", ALL),
         Input({"role": "test-max"}, "value", ALL),
         Input({"role": "test-pattern"}, "value", ALL),
@@ -1065,7 +1030,7 @@ def register_build_callbacks(app):
         State("store_tests", "data"),
         prevent_initial_call=True
     )
-    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list, tests):
+    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list, tests):
         """Génère la prévisualisation JSON du test"""
         if not ttype:
             return "", False, ""
@@ -1087,7 +1052,6 @@ def register_build_callbacks(app):
             tid = None
         db, col = first_with_default(db_list), first_with_default(col_list)
         metric = first_with_default(metric_list)
-        op, thr = first_with_default(op_list), first_with_default(thr_list)
         vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
         pat = first_with_default(pat_list)
         refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
@@ -1106,8 +1070,6 @@ def register_build_callbacks(app):
                 obj.update({"database": db or "", "column": col or ""})
             
             obj.update({"min": vmin, "max": vmax})
-            if op and thr is not None:
-                obj["threshold"] = {"op": op, "value": thr}
         # If tid provided, check whether it's already used
         if tid:
             existing_ids = {x.get("id") for x in (tests or []) if x.get("id")}
@@ -1131,15 +1093,13 @@ def register_build_callbacks(app):
         State({"role": "test-db"}, "value", ALL),
         State({"role": "test-col"}, "value", ALL),
         State({"role": "test-metric"}, "value", ALL),
-        State({"role": "test-op"}, "value", ALL),
-        State({"role": "test-thr"}, "value", ALL),
         State({"role": "test-min"}, "value", ALL),
         State({"role": "test-max"}, "value", ALL),
         State({"role": "test-pattern"}, "value", ALL),
         State({"role": "test-ref-db"}, "value", ALL),
         State({"role": "test-ref-col"}, "value", ALL),
     )
-    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, op_list, thr_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
+    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, vmin_list, vmax_list, pat_list, refdb_list, refcol_list):
         """Ajoute un test au store et met à jour la liste"""
         if not n:
             return "", tests, "", no_update
@@ -1164,7 +1124,6 @@ def register_build_callbacks(app):
             tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
             db, col = first_with_default(db_list), first_with_default(col_list)
             metric = first_with_default(metric_list)
-            op, thr = first_with_default(op_list), first_with_default(thr_list)
             vmin, vmax = first_with_default(vmin_list), first_with_default(vmax_list)
             pat = first_with_default(pat_list)
             refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
@@ -1185,8 +1144,6 @@ def register_build_callbacks(app):
                     t.update({"database": db or "", "column": col or ""})
                 
                 t.update({"min": vmin, "max": vmax})
-                if op and thr is not None:
-                    t["threshold"] = {"op": op, "value": thr}
         
         tests = (tests or [])
         existing_ids = {x.get("id") for x in tests}

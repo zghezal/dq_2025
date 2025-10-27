@@ -1,11 +1,47 @@
+from typing import Annotated
 from pydantic import BaseModel, Field
 from src.plugins.base import BasePlugin, Result, register
+from src.core.ui_meta import UIMeta
 
 class RangeParams(BaseModel):
-    value_from_metric: str = Field(title="Metric id")
-    low: float = Field(title="Low bound")
-    high: float = Field(title="High bound")
-    inclusive: bool = Field(default=True)
+    value_from_metric: Annotated[
+        str, 
+        UIMeta(
+            group="specific", 
+            widget="select", 
+            choices_source="metrics",
+            help="Métrique à tester"
+        )
+    ] = Field(title="Métrique source")
+    
+    low: Annotated[
+        float, 
+        UIMeta(
+            group="specific", 
+            widget="number",
+            placeholder="Ex: 0",
+            help="Borne minimale (min)"
+        )
+    ] = Field(title="Min")
+    
+    high: Annotated[
+        float, 
+        UIMeta(
+            group="specific", 
+            widget="number",
+            placeholder="Ex: 100",
+            help="Borne maximale (max)"
+        )
+    ] = Field(title="Max")
+    
+    inclusive: Annotated[
+        bool, 
+        UIMeta(
+            group="specific", 
+            widget="checkbox",
+            help="Bornes inclusives [min, max] ou exclusives (min, max)"
+        )
+    ] = Field(default=True, title="Inclusif")
 
 @register
 class RangeTest(BasePlugin):
