@@ -12,6 +12,9 @@ def select_dq_point_page():
             options=[], 
             placeholder="Choisir une zone"
         ),
+        
+        html.Div(id="zone-overview-container", className="mt-4"),
+        
         dbc.Button("Aller au Builder", id="select-dq-next", color="primary", className="mt-3"),
         html.Div(id="select-dq-status", className="mt-2"),
 

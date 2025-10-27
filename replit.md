@@ -69,6 +69,19 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **Renommer**: Modal-based renaming with validation to prevent filename conflicts
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
+## Recent Changes (October 27, 2025)
+
+### **Data Visualization Enhancement**
+- **Stream/Project/Zone Overview Tables**: Added visual data inventory display at each selection step
+  - **Step 1 (Stream)**: Shows comprehensive table of all projects, zones, and datasets for selected stream
+  - **Step 2 (Project)**: Shows all zones and datasets for selected project  
+  - **Step 3 (Zone)**: Shows all datasets with source paths for selected zone
+  - Tables dynamically populate from `config/inventory.yaml`
+  - New inventory functions: `get_stream_overview()`, `get_project_overview()`, `get_zone_overview()`
+  - Located in new containers: `stream-overview-container`, `project-overview-container`, `zone-overview-container`
+- **Interactive DataTables**: Bootstrap-styled tables with striped rows for better readability
+- **Context-Aware Display**: Overview tables only appear when relevant selection is made
+
 ## Recent Changes (October 16, 2025)
 
 ### **Architecture Refactoring: DQ Points → Zones**

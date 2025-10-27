@@ -262,3 +262,144 @@ def register_navigation_callbacks(app):
         
         print(f"[DEBUG] Returning preview for {len(datasets)} datasets")
         return preview, status_msg, store_payload
+    
+    # === CALLBACKS POUR LES TABLEAUX DE VISUALISATION ===
+    
+    @app.callback(
+        Output("stream-overview-container", "children"),
+        Input("select-stream-dropdown", "value"),
+        State("url", "pathname"),
+        prevent_initial_call=False
+    )
+    def display_stream_overview(stream_id, pathname):
+        """Affiche le tableau récapitulatif pour le stream sélectionné"""
+        from dash import dash_table, html
+        from src.inventory import get_stream_overview
+        
+        if pathname != "/select-stream" or not stream_id:
+            return None
+        
+        data = get_stream_overview(stream_id)
+        if not data:
+            return html.Div("Aucune donnée disponible pour ce stream.", className="text-muted")
+        
+        return html.Div([
+            html.H5(f"📊 Vue d'ensemble — {stream_id}", className="mb-3"),
+            dash_table.DataTable(
+                data=data,
+                columns=[{"name": col, "id": col} for col in data[0].keys()],
+                style_table={'overflowX': 'auto'},
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'whiteSpace': 'normal',
+                    'height': 'auto',
+                },
+                style_header={
+                    'backgroundColor': 'rgb(230, 230, 230)',
+                    'fontWeight': 'bold'
+                },
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'}
+                ]
+            )
+        ])
+    
+    @app.callback(
+        Output("project-overview-container", "children"),
+        Input("select-project-dropdown", "value"),
+        Input("url", "search"),
+        State("url", "pathname"),
+        prevent_initial_call=False
+    )
+    def display_project_overview(project_id, search, pathname):
+        """Affiche le tableau récapitulatif pour le projet sélectionné"""
+        from dash import dash_table, html
+        from src.inventory import get_project_overview
+        import urllib.parse as urlparse
+        
+        if pathname != "/select-project" or not project_id or not search:
+            return None
+        
+        # Extraire le stream depuis l'URL
+        query = urlparse.parse_qs(search.lstrip('?'))
+        stream_id = query.get('stream', [None])[0]
+        
+        if not stream_id:
+            return None
+        
+        data = get_project_overview(stream_id, project_id)
+        if not data:
+            return html.Div("Aucune donnée disponible pour ce projet.", className="text-muted")
+        
+        return html.Div([
+            html.H5(f"📊 Vue d'ensemble — {stream_id} / {project_id}", className="mb-3"),
+            dash_table.DataTable(
+                data=data,
+                columns=[{"name": col, "id": col} for col in data[0].keys()],
+                style_table={'overflowX': 'auto'},
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'whiteSpace': 'normal',
+                    'height': 'auto',
+                },
+                style_header={
+                    'backgroundColor': 'rgb(230, 230, 230)',
+                    'fontWeight': 'bold'
+                },
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'}
+                ]
+            )
+        ])
+    
+    @app.callback(
+        Output("zone-overview-container", "children"),
+        Input("select-zone-dropdown", "value"),
+        Input("url", "search"),
+        State("url", "pathname"),
+        prevent_initial_call=False
+    )
+    def display_zone_overview(zone_id, search, pathname):
+        """Affiche le tableau récapitulatif pour la zone sélectionnée"""
+        from dash import dash_table, html
+        from src.inventory import get_zone_overview
+        import urllib.parse as urlparse
+        
+        if pathname != "/select-dq-point" or not zone_id or not search:
+            return None
+        
+        # Extraire stream et project depuis l'URL
+        query = urlparse.parse_qs(search.lstrip('?'))
+        stream_id = query.get('stream', [None])[0]
+        project_id = query.get('project', [None])[0]
+        
+        if not stream_id or not project_id:
+            return None
+        
+        data = get_zone_overview(stream_id, project_id, zone_id)
+        if not data:
+            return html.Div("Aucune donnée disponible pour cette zone.", className="text-muted")
+        
+        return html.Div([
+            html.H5(f"📊 Vue d'ensemble — {stream_id} / {project_id} / {zone_id}", className="mb-3"),
+            dash_table.DataTable(
+                data=data,
+                columns=[{"name": col, "id": col} for col in data[0].keys()],
+                style_table={'overflowX': 'auto'},
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'whiteSpace': 'normal',
+                    'height': 'auto',
+                },
+                style_header={
+                    'backgroundColor': 'rgb(230, 230, 230)',
+                    'fontWeight': 'bold'
+                },
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'}
+                ]
+            )
+        ])

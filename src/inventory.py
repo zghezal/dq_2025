@@ -103,3 +103,94 @@ def get_datasets_for_dq_point(dq_point: str, stream: Optional[str] = None, proje
                         results.append(item)
 
     return results
+
+
+def get_stream_overview(stream_id: str) -> List[Dict]:
+    """Retourne un tableau de tous les projets/zones/datasets pour un stream donné.
+    
+    Returns:
+        List de dicts avec {project, zone, dataset, alias}
+    """
+    inv = _load_inventory()
+    results = []
+    
+    for s in inv.get("streams", []):
+        if s.get("id") == stream_id:
+            for p in s.get("projects", []):
+                project_id = p.get("id")
+                for z in p.get("zones", []):
+                    zone_id = z.get("id")
+                    datasets = z.get("datasets", [])
+                    if datasets:
+                        for ds in datasets:
+                            results.append({
+                                "Projet": project_id,
+                                "Zone": zone_id,
+                                "Dataset": ds.get("name", ""),
+                                "Alias": ds.get("alias", "")
+                            })
+                    else:
+                        results.append({
+                            "Projet": project_id,
+                            "Zone": zone_id,
+                            "Dataset": "-",
+                            "Alias": "-"
+                        })
+    return results
+
+
+def get_project_overview(stream_id: str, project_id: str) -> List[Dict]:
+    """Retourne un tableau de toutes les zones/datasets pour un projet donné.
+    
+    Returns:
+        List de dicts avec {zone, dataset, alias}
+    """
+    inv = _load_inventory()
+    results = []
+    
+    for s in inv.get("streams", []):
+        if s.get("id") == stream_id:
+            for p in s.get("projects", []):
+                if p.get("id") == project_id:
+                    for z in p.get("zones", []):
+                        zone_id = z.get("id")
+                        datasets = z.get("datasets", [])
+                        if datasets:
+                            for ds in datasets:
+                                results.append({
+                                    "Zone": zone_id,
+                                    "Dataset": ds.get("name", ""),
+                                    "Alias": ds.get("alias", "")
+                                })
+                        else:
+                            results.append({
+                                "Zone": zone_id,
+                                "Dataset": "-",
+                                "Alias": "-"
+                            })
+    return results
+
+
+def get_zone_overview(stream_id: str, project_id: str, zone_id: str) -> List[Dict]:
+    """Retourne un tableau de tous les datasets pour une zone donnée.
+    
+    Returns:
+        List de dicts avec {dataset, alias}
+    """
+    inv = _load_inventory()
+    results = []
+    
+    for s in inv.get("streams", []):
+        if s.get("id") == stream_id:
+            for p in s.get("projects", []):
+                if p.get("id") == project_id:
+                    for z in p.get("zones", []):
+                        if z.get("id") == zone_id:
+                            datasets = z.get("datasets", [])
+                            for ds in datasets:
+                                results.append({
+                                    "Dataset": ds.get("name", ""),
+                                    "Alias": ds.get("alias", ""),
+                                    "Source": ds.get("source", {}).get("path", "")
+                                })
+    return results
