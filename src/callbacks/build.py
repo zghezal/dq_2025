@@ -161,10 +161,11 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output("ds-picker", "options"),
-        Output("store_datasets", "data"),
+        Output("store_datasets", "data", allow_duplicate=True),
         Input("url", "search"),
         Input("inventory-datasets-store", "data"),
-        State("store_datasets", "data")
+        State("store_datasets", "data"),
+        prevent_initial_call='initial_duplicate'
     )
     def update_dataset_options(search, inv_store_data, current_data):
         """
@@ -278,11 +279,12 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output("save-datasets-status", "children"),
-        Output("store_datasets", "data"),
+        Output("store_datasets", "data", allow_duplicate=True),
         Input("save-datasets", "n_clicks"),
         State("ds-picker", "value"),
         State({"role": "alias-input", "ds": ALL}, "value"),
-        State({"role": "alias-input", "ds": ALL}, "id")
+        State({"role": "alias-input", "ds": ALL}, "id"),
+        prevent_initial_call=True
     )
     def save_datasets(n, selected, alias_values, alias_ids):
         """Enregistre les datasets et leurs alias"""
