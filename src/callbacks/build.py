@@ -161,11 +161,10 @@ def register_build_callbacks(app):
 
     @app.callback(
         Output("ds-picker", "options"),
-        Output("store_datasets", "data", allow_duplicate=True),
+        Output("store_datasets", "data"),
         Input("url", "search"),
         Input("inventory-datasets-store", "data"),
-        State("store_datasets", "data"),
-        prevent_initial_call='initial_duplicate'
+        State("store_datasets", "data")
     )
     def update_dataset_options(search, inv_store_data, current_data):
         """
