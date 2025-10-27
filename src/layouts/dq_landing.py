@@ -4,7 +4,7 @@ import dash_bootstrap_components as dbc
 
 def dq_landing_page():
     return dbc.Container([
-        html.H2("DQ Management — Accueil"),
+        html.H2("DQ Editor — Accueil"),
         html.P("Choisissez une action pour les DQ developers. Chaque action ouvre une page dédiée."),
         dbc.Row([
             dbc.Col(dbc.Card([

@@ -5,14 +5,14 @@ import dash_bootstrap_components as dbc
 
 
 def dashboard_page():
-    """Page dashboard avec les options DQ Management et Drop&DQ"""
+    """Page dashboard avec les options DQ Editor et Drop&DQ"""
     return dbc.Container([
         dbc.Row([
             dbc.Col(html.H2("Portal STDA - Dashboard", className="mb-3"), width=12)
         ]),
         dbc.Row([
             dbc.Col(dbc.Card([
-                dbc.CardHeader("DQ Management"),
+                dbc.CardHeader("DQ Editor"),
                 dbc.CardBody([
                     html.P("Accès pour les DQ developers : Inventory, Builder, Runner."),
                     dbc.Button("DQ Inventory", href="/dq-inventory", color="secondary", className="me-2"),

@@ -1,7 +1,8 @@
 # Page Build (wizard de création DQ avec onglets)
 
 from dash import html, dcc
-from src.metrics_registry import get_metric_options
+from src.metrics_registry import get_metric_options, get_metric_meta
+from src.plugins.discovery import discover_all_plugins
 import dash_bootstrap_components as dbc
 
 
@@ -97,7 +98,9 @@ def build_page():
                                     dcc.Dropdown(
                                         id="test-type",
                                         options=[
-                                            {"label": "range", "value": "range"}
+                                            {"label": info.plugin_class.label, "value": pid}
+                                            for pid, info in discover_all_plugins(verbose=False).items()
+                                            if info.category == "tests"
                                         ],
                                         placeholder="Choisir le type",
                                         clearable=False,
@@ -185,17 +188,17 @@ def build_page():
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle("📊 Documentation des Métriques")),
             dbc.ModalBody([
-                html.H6("Type de métrique disponible :", className="mb-3"),
-                
+                html.H6("Métriques disponibles", className="mb-3"),
+                # Générer dynamiquement la liste des métriques découvertes
                 html.Div([
-                    html.H6("📏 Range", className="text-primary"),
-                    html.P("Métrique de plage de valeurs pour une ou plusieurs colonnes."),
-                    html.Ul([
-                        html.Li("Paramètres : dataset (alias), colonnes (une ou plusieurs)"),
-                        html.Li("Supporte la multi-sélection de colonnes"),
-                        html.Li("Optionnel : where (clause de filtrage)"),
-                    ]),
-                ], className="mb-3"),
+                    html.Div([
+                        html.H6(info.plugin_class.label or pid, className="text-primary"),
+                        html.P(get_metric_meta(pid).get("description") or (info.plugin_class.__doc__ or "").strip().splitlines()[0] if info.plugin_class.__doc__ else ""),
+                        html.Ul([
+                            html.Li(f"ID: {pid}"),
+                        ] + [html.Li(f"Param: {p.get('name')} ({p.get('type')})") for p in get_metric_meta(pid).get('params', [])])
+                    ], className="mb-3") for pid, info in discover_all_plugins(verbose=False).items() if info.category == 'metrics'
+                ])
             ]),
             dbc.ModalFooter(
                 dbc.Button("Fermer", id="close-metric-help", className="ms-auto")
@@ -206,18 +209,17 @@ def build_page():
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle("✅ Documentation des Tests")),
             dbc.ModalBody([
-                html.H6("Type de test disponible :", className="mb-3"),
-                
+                html.H6("Tests disponibles", className="mb-3"),
+                # Générer dynamiquement la liste des plugins de tests
                 html.Div([
-                    html.H6("📏 Range", className="text-primary"),
-                    html.P("Vérifie que les valeurs sont dans une plage définie (min, max)."),
-                    html.Ul([
-                        html.Li("Peut se baser sur : une colonne de database OU une métrique"),
-                        html.Li("Paramètres : min (valeur minimale), max (valeur maximale)"),
-                        html.Li("Optionnel : seuil pour tolérance (op et value)"),
-                        html.Li("💡 Choisissez 'Database' pour tester une colonne directe ou 'Métrique' pour tester une métrique calculée"),
-                    ]),
-                ], className="mb-3"),
+                    html.Div([
+                        html.H6(info.plugin_class.label or pid, className="text-primary"),
+                        html.P((info.plugin_class.__doc__ or "").strip().splitlines()[0] if info.plugin_class.__doc__ else ""),
+                        html.Ul([
+                            html.Li(f"ID: {pid}"),
+                        ] + [html.Li(f"Param: {k}") for k in (info.plugin_class.ParamsModel.model_fields.keys() if hasattr(info.plugin_class.ParamsModel, 'model_fields') else list(info.plugin_class.ParamsModel.model_json_schema().get('properties', {}).keys()))])
+                    ], className="mb-3") for pid, info in discover_all_plugins(verbose=False).items() if info.category == 'tests'
+                ])
             ]),
             dbc.ModalFooter(
                 dbc.Button("Fermer", id="close-test-help", className="ms-auto")

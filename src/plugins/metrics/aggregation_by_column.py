@@ -10,6 +10,7 @@ Cette métrique PRODUIT un dataset avec des colonnes, donc:
 """
 
 from typing import Dict, Any
+import pandas as pd
 from pydantic import BaseModel, Field
 from pyspark.sql import functions as F
 
@@ -133,9 +134,40 @@ class AggregationByColumn(BasePlugin):
         """
         p = self.ParamsModel(**params)
         
-        # Charger le dataset (Spark DataFrame attendu)
+        # Charger le dataset (Spark DataFrame attendu mais on accepte pandas)
         df = context.load(p.dataset)
-        
+
+        # Pandas path
+        if isinstance(df, pd.DataFrame):
+            if p.group_by not in df.columns:
+                return Result(passed=None, message=f"Colonne de grouping '{p.group_by}' introuvable", meta={"error": "group_by_not_found"})
+            if p.target not in df.columns:
+                return Result(passed=None, message=f"Colonne cible '{p.target}' introuvable", meta={"error": "target_not_found"})
+
+            agg_pd = df.groupby(p.group_by).agg(
+                count=(p.target, 'count'),
+                **{
+                    f"sum_{p.target}": (p.target, 'sum'),
+                    f"avg_{p.target}": (p.target, 'mean'),
+                    f"min_{p.target}": (p.target, 'min'),
+                    f"max_{p.target}": (p.target, 'max')
+                }
+            ).reset_index()
+
+            # Ensure column names match expected
+            agg_pandas = agg_pd.rename(columns={p.group_by: p.group_by})
+
+            # Validate schema
+            expected_schema = self.output_schema(params)
+            actual_columns = list(agg_pandas.columns)
+            validation_errors = expected_schema.validate_actual_output(actual_columns)
+
+            if validation_errors:
+                return Result(passed=None, message=f"Schema mismatch: {validation_errors}", meta={"error": "schema_validation_failed"})
+
+            return Result(passed=None, dataframe=agg_pandas, message=f"Aggregation complete: {len(agg_pandas)} groups", meta={"dataset": p.dataset, "group_by": p.group_by, "target": p.target, "num_groups": len(agg_pandas)})
+
+        # Spark path
         # Vérifier que les colonnes existent
         if p.group_by not in df.columns:
             return Result(
@@ -143,14 +175,14 @@ class AggregationByColumn(BasePlugin):
                 message=f"Colonne de grouping '{p.group_by}' introuvable",
                 meta={"error": "group_by_not_found"}
             )
-        
+
         if p.target not in df.columns:
             return Result(
                 passed=None,
                 message=f"Colonne cible '{p.target}' introuvable",
                 meta={"error": "target_not_found"}
             )
-        
+
         # Effectuer l'agrégation avec Spark (distribué)
         agg_spark = df.groupBy(p.group_by).agg(
             F.count("*").alias("count"),
@@ -159,7 +191,7 @@ class AggregationByColumn(BasePlugin):
             F.min(p.target).alias(f"min_{p.target}"),
             F.max(p.target).alias(f"max_{p.target}")
         )
-        
+
         # Collecter SEULEMENT le résultat agrégé (généralement petit DataFrame)
         # Conversion en Pandas pour compatibilité avec le reste du système
         agg_pandas = agg_spark.toPandas()

@@ -1,14 +1,14 @@
-# Page dashboard DQ Management (accès complet)
+# Page dashboard DQ Editor (accès complet)
 
 from dash import html
 import dash_bootstrap_components as dbc
 
 
 def dq_management_dashboard_page():
-    """Page dashboard DQ Management avec accès complet à toutes les fonctionnalités"""
+    """Page dashboard DQ Editor avec accès complet à toutes les fonctionnalités"""
     return dbc.Container([
         dbc.Row([
-            dbc.Col(html.H2("DQ Management - Accès Complet", className="mb-4"), width=12)
+            dbc.Col(html.H2("DQ Editor - Accès Complet", className="mb-4"), width=12)
         ]),
         dbc.Row([
             dbc.Col(dbc.Card([

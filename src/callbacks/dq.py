@@ -1,4 +1,4 @@
-# Callbacks de la page DQ Management
+# Callbacks de la page DQ Editor
 
 from dash import html, Input, Output, State, ALL, ctx, no_update
 import dash_bootstrap_components as dbc
@@ -14,7 +14,7 @@ from src.utils import (
 
 
 def register_dq_callbacks(app):
-    """Enregistre les callbacks de la page DQ Management"""
+    """Enregistre les callbacks de la page DQ Editor"""
     
     @app.callback(
         Output("dq-project", "options"),

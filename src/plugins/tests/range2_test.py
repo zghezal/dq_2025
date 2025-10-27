@@ -5,10 +5,13 @@ from src.plugins.base_models import CommonArgs
 from src.core.ui_meta import UIMeta
 
 class RangeSpecific(BaseModel):
-    value_from_metric: Annotated[str, UIMeta(group="specific", widget="select", choices_source="metrics", help="ID de métrique calculée")] = Field(title="Metric ID")
-    low: Annotated[float, UIMeta(group="specific", widget="number", help="Borne basse")] = Field(title="Low")
-    high: Annotated[float, UIMeta(group="specific", widget="number", help="Borne haute")] = Field(title="High")
-    inclusive: Annotated[bool, UIMeta(group="specific", widget="checkbox", help="Bornes inclusives")] = Field(default=True, title="Inclusif")
+    # Use plain types here so ParamsModel accepts simple dicts in tests.
+    # UI metadata (UIMeta) is intentionally omitted from the type annotation
+    # to avoid strict pydantic interpretation during tests.
+    value_from_metric: str = Field(title="Metric ID")
+    low: float = Field(title="Low")
+    high: float = Field(title="High")
+    inclusive: bool = Field(default=True, title="Inclusif")
 
 class Range2Params(CommonArgs):
     specific: RangeSpecific

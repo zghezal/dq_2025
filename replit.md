@@ -1,7 +1,7 @@
-# DQ Builder — Data Quality Management App
+# DQ Builder — Data Quality Editor App
 
 ## Overview
-DQ Builder is a Dash-based web application designed for comprehensive Data Quality (DQ) configuration management. Its primary purpose is to empower users to define, configure, and publish data quality metrics and tests for various datasets. The application streamlines the process of ensuring data integrity by allowing users to select and configure datasets with aliases, define **Range** metrics with multi-column support, create **Range** tests with min/max validation, and then preview and publish these configurations in either JSON or YAML format.
+DQ Builder is a Dash-based web application designed for comprehensive Data Quality (DQ) configuration editor. Its primary purpose is to empower users to define, configure, and publish data quality metrics and tests for various datasets. The application streamlines the process of ensuring data integrity by allowing users to select and configure datasets with aliases, define **Range** metrics with multi-column support, create **Range** tests with min/max validation, and then preview and publish these configurations in either JSON or YAML format.
 
 The business vision behind DQ Builder is to provide a user-friendly, efficient tool for data stewards and analysts to proactively manage data quality, reduce data-related errors, and improve decision-making based on reliable data. It aims to simplify a complex process, making advanced DQ configurations accessible without deep technical expertise.
 
@@ -29,7 +29,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **❓ Help** button for assistance
 - **Dual Access System**: Two distinct entry points on the home page:
   - **Check&Drop**: Limited access for providers to deposit datasets and run DQ checks
-  - **DQ Management**: Full access for DQ developers with all features (Inventory, Builder, Runner, Drop&DQ)
+  - **DQ Editor**: Full access for DQ developers with all features (Inventory, Builder, Runner, Drop&DQ)
 - A multi-page application structure with a persistent navigation bar.
 - A tabbed interface for the 'Build' page, organizing configuration steps (Datasets, Metrics, Tests, Publication) for improved user experience and navigation.
 - Interactive tables (`dash_table.DataTable`) for visualizing and managing metrics, tests, and published configurations.
@@ -45,7 +45,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
 - **Multi-Page Structure**: Implemented with `dcc.Location` for navigation between:
   - Home (`/`) with dual access selection
   - Check&Drop Dashboard (`/check-drop-dashboard`) with limited features
-  - DQ Management Dashboard (`/dq-management-dashboard`) with full access
+  - DQ Editor Dashboard (`/dq-editor-dashboard`) with full access
   - Build (`/build`), DQ Inventory (`/dq-inventory`), Runner (`/dq-runner`), Drop&DQ (`/drop-dq`), and Configurations (`/configs`) pages
 - **Dynamic URL Handling**: Uses URL query parameters to pass context (stream, project, zone) between pages and decode them via `urlparse.unquote()`.
 - **Unique ID Generation**: Automatic generation of unique IDs for metrics (M-001, M-002...) and tests (T-001, T-002...).
@@ -53,7 +53,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
 - **Local Development Stub**: `dataiku_stub.py` provides a local simulation of the Dataiku API for standalone development and testing.
 
 ### Feature Specifications
-- **Dataset Management**: Selection of datasets and assignment of aliases. Currently supports local CSV files from `./datasets/`.
+- **Dataset Editor**: Selection of datasets and assignment of aliases. Currently supports local CSV files from `./datasets/`.
 - **Metric Type (Simplified)**: 
   - **Range**: Only metric type available, supports multi-column selection for range-based data quality metrics
 - **Test Type (Simplified)**: 
@@ -63,7 +63,7 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
 - **Configuration Publication**: Ability to save defined DQ configurations to managed folders in JSON or YAML format.
 - **Configuration Visualization**: A dedicated page to browse, display in tabular format, and view full details (via modal) of stored configurations.
 - **Inline Documentation**: Integrated help modals for Range metric and test types with examples and parameter explanations.
-- **DQ Management Actions**: Full CRUD operations on published configurations:
+- **DQ Editor Actions**: Full CRUD operations on published configurations:
   - **Modifier**: Redirects to Build page with configuration pre-loaded for editing
   - **Dupliquer**: Creates a copy of the configuration with auto-generated timestamped name
   - **Renommer**: Modal-based renaming with validation to prevent filename conflicts

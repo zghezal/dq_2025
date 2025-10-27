@@ -33,10 +33,10 @@ def home_page():
             dbc.Col(
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("DQ Management", className="text-center mb-3"),
+                        html.H4("DQ Editor", className="text-center mb-3"),
                         html.P("Accès complet pour les DQ developers : Inventory, Builder, Runner", className="text-center text-muted mb-4"),
                         html.Div([
-                            dbc.Button("Accéder", href="/dq-management-dashboard", color="primary", size="lg", className="w-100")
+                            dbc.Button("Accéder", href="/dq-editor-dashboard", color="primary", size="lg", className="w-100")
                         ])
                     ])
                 ], className="shadow"),

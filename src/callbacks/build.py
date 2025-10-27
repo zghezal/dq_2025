@@ -28,6 +28,11 @@ from src.metrics_registry import get_metric_options, get_metric_meta
 from src.dq_runner import run_dq_config
 import pandas as pd
 from dash import dash_table
+from src.plugins.discovery import discover_all_plugins, ensure_plugins_discovered
+from src.context.spark_context import SparkDQContext
+from src.plugins.sequencer import build_execution_plan
+from src.plugins.executor import Executor, ExecutionContext
+import traceback
 
 
 def generate_metric_description(metric):
@@ -1667,55 +1672,95 @@ def register_build_callbacks(app):
         """Exécute le runner DQ sur un DataFrame d'exemple et affiche les résultats."""
         if not n:
             return no_update
-
-        # Build config
+        # Build config using sanitized structures
         cfg = {"metrics": sanitize_metrics(metrics or []), "tests": sanitize_tests(tests or [])}
 
-        # Try to load a representative DataFrame
-        df = pd.DataFrame()
-        # If datasets are provided, try the first one
+        # Ensure plugins are discovered (populates REGISTRY)
         try:
-            if datasets:
-                first_ds = datasets[0].get("dataset") if isinstance(datasets[0], dict) else None
-                if first_ds:
-                    try:
-                        ds = dataiku.Dataset(first_ds)
-                        df = ds.get_dataframe(limit=1000)
-                    except Exception:
-                        # fallback to CSV in ./datasets/{name}.csv
-                        import os
-                        csv_path = f"./datasets/{first_ds}.csv"
-                        if os.path.exists(csv_path):
-                            df = pd.read_csv(csv_path)
+            ensure_plugins_discovered()
         except Exception:
-            df = pd.DataFrame()
+            # best-effort continue
+            pass
 
-        # If still empty, create a minimal DF based on metric/test columns to allow missing_rate to run
-        if df.empty:
-            # Gather column candidates from metrics/tests
-            cols = set()
-            for m in (metrics or []):
-                if isinstance(m, dict) and m.get("column"):
-                    cols.add(m.get("column"))
-            for t in (tests or []):
-                if isinstance(t, dict) and t.get("column"):
-                    cols.add(t.get("column"))
-            if not cols:
-                # create a default column
-                df = pd.DataFrame({"col1": [1, None, 3, None, 5]})
-            else:
-                d = {}
-                for c in cols:
-                    d[c] = [1, None, 3, None, 5]
-                df = pd.DataFrame(d)
-
-        # Run the runner
+        # Build a Spark catalog from the datasets store (alias -> source)
+        catalog = {}
         try:
-            results = run_dq_config(df, cfg)
-            pretty = json.dumps(results, ensure_ascii=False, indent=2)
+            if datasets and isinstance(datasets, list):
+                for item in datasets:
+                    if isinstance(item, dict):
+                        alias = item.get("alias") or item.get("dataset")
+                        src = item.get("dataset") or item.get("source")
+                        if alias and src:
+                            catalog[alias] = src
+                    elif isinstance(item, str):
+                        # if only name provided, use it as both alias and source
+                        catalog[item] = item
+        except Exception:
+            catalog = {}
+
+        # Réutiliser la session Spark si elle a été instanciée au startup (app.server.spark_context)
+        spark_ctx = getattr(app.server, "spark_context", None)
+        if spark_ctx is None:
+            try:
+                spark_ctx = SparkDQContext(catalog=catalog)
+                # attach for reuse later
+                app.server.spark_context = spark_ctx
+            except Exception as e:
+                return dbc.Alert(f"Erreur initialisation Spark: {e}", color="danger")
+
+        # Create an ExecutionContext that uses SparkDQContext as loader
+        def loader(alias: str):
+            return spark_ctx.load(alias)
+
+        exec_ctx = ExecutionContext(loader)
+
+        # Convert cfg to the shape expected by the sequencer:
+        # metrics already have 'params' from sanitize_metrics()
+        plan_cfg = {
+            "metrics": cfg.get("metrics", []),
+            "tests": cfg.get("tests", [])
+        }
+
+        # Build execution plan and execute
+        try:
+            plan = build_execution_plan(plan_cfg)
+            executor = Executor(exec_ctx)
+            exec_result = executor.execute(plan)
+
+            # Build a friendly summary of results
+            out = {"metrics": {}, "tests": {}, "summary": exec_result.summary()}
+            for sr in exec_result.step_results:
+                sid = sr.step.id
+                entry = {
+                    "status": sr.status.value,
+                    "message": sr.result.message if sr.result and getattr(sr.result, 'message', None) else None,
+                }
+                # value/dataframe when present
+                if sr.result:
+                    try:
+                        if getattr(sr.result, 'value', None) is not None:
+                            entry["value"] = sr.result.value
+                        df = sr.result.get_dataframe() if hasattr(sr.result, 'get_dataframe') else None
+                        if df is not None:
+                            entry["dataframe_columns"] = list(df.columns)
+                            entry["dataframe_rows"] = len(df)
+                    except Exception:
+                        # ignore serialization issues
+                        entry["value"] = str(sr.result.value) if getattr(sr.result, 'value', None) is not None else None
+
+                if sr.step.kind.value == "metric":
+                    out["metrics"][sid] = entry
+                else:
+                    out["tests"][sid] = entry
+
+            pretty = json.dumps(out, ensure_ascii=False, indent=2)
             return dbc.Card([
-                dbc.CardHeader("Résultats Run DQ"),
+                dbc.CardHeader("Résultats Run DQ (Spark)"),
                 dbc.CardBody(html.Pre(pretty, style={"background": "#111", "color": "#0f0", "padding": "0.75rem"}))
             ])
         except Exception as e:
-            return dbc.Alert(f"Erreur lors du Run DQ: {e}", color="danger")
+            tb = traceback.format_exc()
+            return dbc.Alert([
+                html.Div(f"Erreur lors du Run DQ: {e}"),
+                html.Pre(tb, style={"whiteSpace": "pre-wrap", "fontSize": "10px"})
+            ], color="danger")

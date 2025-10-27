@@ -38,10 +38,10 @@ def register_navigation_callbacks(app):
             parts.append("Dashboard")
         elif pathname == "/check-drop-dashboard":
             parts.append("Check&Drop Dashboard")
-        elif pathname == "/dq-management-dashboard":
-            parts.append("DQ Management Dashboard")
+        elif pathname == "/dq-editor-dashboard":
+            parts.append("DQ Editor Dashboard")
         elif pathname == "/dq":
-            parts.append("DQ Management")
+            parts.append("DQ Editor")
         elif pathname == "/dq-inventory":
             parts.append("DQ Inventory")
         elif pathname == "/dq-runner":
@@ -71,7 +71,7 @@ def register_navigation_callbacks(app):
             return dashboard_page()
         if clean_path == "/check-drop-dashboard":
             return check_drop_dashboard_page()
-        if clean_path == "/dq-management-dashboard":
+        if clean_path == "/dq-editor-dashboard":
             return dq_management_dashboard_page()
         if clean_path == "/build":
             return build_page()

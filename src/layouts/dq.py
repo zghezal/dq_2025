@@ -1,4 +1,4 @@
-# Page DQ Management
+# Page DQ Editor
 
 from dash import html, dcc
 import dash_bootstrap_components as dbc
@@ -15,7 +15,7 @@ DQ_POINTS = [
 def dq_page():
     """Page de gestion des configurations DQ"""
     return dbc.Container([
-        dbc.Card([dbc.CardHeader("DQ Management"), dbc.CardBody([
+        dbc.Card([dbc.CardHeader("DQ Editor"), dbc.CardBody([
             dbc.Row([
                 dbc.Col([
                     html.Label("Stream"),

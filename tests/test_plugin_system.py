@@ -35,7 +35,8 @@ class MockContext:
         """Retourne un DataFrame de test."""
         if alias not in self.datasets:
             # Créer un dataset de test par défaut
-            if alias == "sales_2024":
+            # Supporter à la fois 'sales' et 'sales_2024' comme alias courants
+            if alias in ("sales_2024", "sales"):
                 self.datasets[alias] = pd.DataFrame({
                     "date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"],
                     "region": ["North", "South", "North", "East"],

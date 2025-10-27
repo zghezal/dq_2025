@@ -52,7 +52,7 @@ Contient le coeur de l'application : layouts (UI), callbacks (logique réactive)
 ## Layouts (UI) — `src/layouts/`
 
 - `src/layouts/home.py`
-	- Page d'accueil « Portal STDA » (titre + deux cartes). Propose deux parcours : DQ Management et Drop&DQ.
+	- Page d'accueil « Portal STDA » (titre + deux cartes). Propose deux parcours : DQ Editor et Drop&DQ.
 
 - `src/layouts/navbar.py`
 	- Composant de navigation (brand, liens). Affiche le breadcrumb `crumb` et les liens vers les sections principales.
@@ -61,7 +61,7 @@ Contient le coeur de l'application : layouts (UI), callbacks (logique réactive)
 	- Page utilitaire / gestion DQ (sélection Stream/Project/DQ point et actions sur les configs). Contient modals pour rename/delete et un formulaire de filtrage.
 
 - `src/layouts/dq_landing.py` et `src/layouts/drop_landing.py`
-	- Pages "landing" qui présentent les actions disponibles pour DQ Management et Drop&DQ.
+	- Pages "landing" qui présentent les actions disponibles pour DQ Editor et Drop&DQ.
 
 - `src/layouts/build.py`
 	- Page Builder (wizard) : structure en tabs (Datasets, Métriques, Tests, Publication).

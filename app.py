@@ -24,10 +24,22 @@ from src.callbacks.navigation import register_navigation_callbacks
 from src.callbacks.dq import register_dq_callbacks
 from src.callbacks.build import register_build_callbacks
 from src.callbacks.configs import register_configs_callbacks
+# Spark context global (instantiated at app startup so Dataiku webapp finds a ready Spark session)
+try:
+    from src.context.spark_context import SparkDQContext
+    # Create a minimal catalog for now; when launched from Dataiku the inventory mapping
+    # can be injected into the context or callbacks can attach datasets to this catalog.
+    spark_ctx = SparkDQContext(catalog={})
+except Exception:
+    spark_ctx = None
 
 # Initialisation de l'application Dash
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+
+# Attach the Spark context to the underlying Flask server so callbacks can reuse it
+if spark_ctx is not None:
+    app.server.spark_context = spark_ctx
 
 # Layout principal
 app.layout = html.Div([

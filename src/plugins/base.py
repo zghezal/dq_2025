@@ -193,3 +193,16 @@ def register(cls: type[BasePlugin]):
     """
     REGISTRY[cls.plugin_id] = cls
     return cls
+
+# Backwards compatibility alias used by older tests/code
+registry = REGISTRY
+
+
+# On import, essayer de découvrir et enregistrer automatiquement les plugins
+try:
+    # Import local to avoid circular import at module load time in some environments
+    from src.plugins.discovery import ensure_plugins_discovered
+    ensure_plugins_discovered()
+except Exception:
+    # best-effort: tests or environments that don't support dynamic import will still work
+    pass

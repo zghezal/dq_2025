@@ -255,14 +255,18 @@ def sanitize_metric(m: dict) -> dict:
     """
     if not isinstance(m, dict):
         return {}
-    allowed_types = {"range"}
+
+    # Ne plus restreindre les types statiquement : on accepte tout type fourni
     out = {
         "id": m.get("id") or None,
-        "type": (m.get("type") if m.get("type") in allowed_types else (m.get("type") or "unknown")),
-        "database": m.get("database") or m.get("dataset") or "",
-        "column": m.get("column") or "",
-        "where": m.get("where") or "",
-        "expr": m.get("expr") or "",
+        "type": m.get("type") or "unknown",
+        # Pour la compatibilité avec le séquenceur, on fournit les paramètres sous la clé 'params'
+        "params": {
+            "dataset": m.get("database") or m.get("dataset") or "",
+            "column": m.get("column") or "",
+            "where": m.get("where") or "",
+            "expr": m.get("expr") or "",
+        }
     }
     return out
 
@@ -275,10 +279,11 @@ def sanitize_test(t: dict) -> dict:
     """
     if not isinstance(t, dict):
         return {}
-    allowed_types = {"range"}
+
+    # Accept any provided test type (discovery/registry will validate later)
     out = {
         "id": t.get("id") or None,
-        "type": (t.get("type") if t.get("type") in allowed_types else (t.get("type") or "unknown")),
+        "type": t.get("type") or "unknown",
         "severity": t.get("severity") or "medium",
         "sample_on_fail": bool(t.get("sample_on_fail") or t.get("sample_on_fail") == True),
     }
