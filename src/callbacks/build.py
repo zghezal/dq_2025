@@ -169,13 +169,18 @@ def register_build_callbacks(app):
     )
     def update_dataset_options(search, inv_store_data, current_data):
         """Met à jour les datasets disponibles selon le contexte et auto-charge le store"""
+        print(f"[DEBUG] ⭐ update_dataset_options APPELÉ !")
+        print(f"[DEBUG]   - search={search}")
+        print(f"[DEBUG]   - inv_store_data={inv_store_data}")
+        print(f"[DEBUG]   - current_data={current_data}")
+        
         q = parse_query(search) if search else {}
 
         stream = q.get("stream")
         projet = q.get("project") 
         zone = q.get("zone")
         
-        print(f"[DEBUG] update_dataset_options: inv_store_data={inv_store_data}, current_data={current_data}")
+        print(f"[DEBUG]   - Parsed: stream={stream}, project={projet}, zone={zone}")
         
         # Use inventory store data (populated at select-dq-point)
         if inv_store_data and isinstance(inv_store_data, dict):
