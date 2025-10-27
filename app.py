@@ -53,6 +53,10 @@ app.validation_layout = html.Div([
     dcc.Location(id="url", refresh=False),
     navbar(),
     html.Div(id="page-content"),
+    
+    # Stores globaux partagés entre toutes les pages (déclarés ici pour éviter les duplications)
+    dcc.Store(id="inventory-datasets-store", storage_type="session"),
+    
     home_page(),
     dashboard_page(),
     check_drop_dashboard_page(),

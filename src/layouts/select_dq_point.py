@@ -19,7 +19,7 @@ def select_dq_point_page():
         html.Div(id="select-dq-status", className="mt-2"),
 
         # Stores pour datasets, metrics, tests (requis par les callbacks globaux)
-        dcc.Store(id="inventory-datasets-store", storage_type="session"),
+        # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
         dcc.Store(id="store_datasets", storage_type="session"),
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),

@@ -223,12 +223,12 @@ def register_navigation_callbacks(app):
         Utilise `config/inventory.yaml` via `src.inventory.get_datasets_for_zone`.
         Si le contexte stream/project est fourni dans l'URL, on restreint au scope.
         """
+        from dash import html, no_update
         print(f"[DEBUG] populate_datasets_for_zone called: zone={zone_id}, search={search}")
         
         if not zone_id:
-            print("[DEBUG] No zone, returning empty")
-            from dash import html
-            return html.Em("Sélectionnez une zone"), "Sélectionnez une zone pour voir les datasets disponibles", {}
+            print("[DEBUG] No zone, returning no_update for store to preserve existing data")
+            return html.Em("Sélectionnez une zone"), "Sélectionnez une zone pour voir les datasets disponibles", no_update
 
         stream_id = None
         project_id = None

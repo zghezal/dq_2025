@@ -16,7 +16,7 @@ def build_page():
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
         dcc.Store(id="store_edit_metric", storage_type="session"),
-        dcc.Store(id="inventory-datasets-store", storage_type="session"),
+        # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
 
         dbc.Tabs([
             # Onglet 1: Datasets
