@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["glibcLocales", "libyaml"]
+packages = ["arrow-cpp", "glibcLocales", "libxcrypt", "libyaml", "pkg-config"]
 
 [workflows]
 runButton = "Project"
@@ -41,6 +41,10 @@ externalPort = 3000
 [[ports]]
 localPort = 33223
 externalPort = 3001
+
+[[ports]]
+localPort = 44939
+externalPort = 3002
 
 [deployment]
 deploymentTarget = "autoscale"
