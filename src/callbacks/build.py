@@ -163,11 +163,11 @@ def register_build_callbacks(app):
         Output("ds-picker", "options"),
         Output("store_datasets", "data", allow_duplicate=True),
         Input("url", "search"),
+        Input("inventory-datasets-store", "data"),
         State("store_datasets", "data"),
-        State("inventory-datasets-store", "data"),
         prevent_initial_call='initial_duplicate'
     )
-    def update_dataset_options(search, current_data, inv_store_data):
+    def update_dataset_options(search, inv_store_data, current_data):
         """Met à jour les datasets disponibles selon le contexte et auto-charge le store"""
         q = parse_query(search) if search else {}
 
