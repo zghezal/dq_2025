@@ -1261,10 +1261,10 @@ def register_build_callbacks(app):
         header = html.Tr([
             html.Th("ID"),
             html.Th("Type"),
-            html.Th("Base"),
+            html.Th("Source"),
             html.Th("Colonne"),
             html.Th("Sévérité"),
-            html.Th("Seuil"),
+            html.Th("Range"),
             html.Th("Échantillon"),
             html.Th("Actions", style={"width": "200px"})
         ])
@@ -1273,14 +1273,20 @@ def register_build_callbacks(app):
         for idx, t in enumerate(tests):
             test_id = t.get("id", "N/A")
             
-            # Extraire le seuil si présent (peut être un dict ou un nombre)
-            threshold = t.get("threshold")
-            if isinstance(threshold, dict):
-                threshold_str = f"{threshold.get('op', '')} {threshold.get('value', '')}"
-            elif threshold is not None:
-                threshold_str = str(threshold)
+            # Déterminer la source (database/column OU metric)
+            if t.get("metric"):
+                source_info = f"📊 {t.get('metric')}"
+                column_info = "-"
             else:
-                threshold_str = "-"
+                source_info = t.get("database", "-")
+                column_info = t.get("column", "-")
+            
+            # Extraire min/max pour les tests range
+            range_info = "-"
+            if t.get("type") == "range":
+                vmin = t.get("min", "?")
+                vmax = t.get("max", "?")
+                range_info = f"[{vmin}, {vmax}]"
             
             actions = html.Div([
                 dbc.Button(
@@ -1311,10 +1317,10 @@ def register_build_callbacks(app):
             row = html.Tr([
                 html.Td(test_id),
                 html.Td(t.get("type", "N/A")),
-                html.Td(t.get("database", "-")),
-                html.Td(t.get("column", "-")),
+                html.Td(source_info),
+                html.Td(column_info),
                 html.Td(t.get("severity", "-")),
-                html.Td(threshold_str),
+                html.Td(range_info),
                 html.Td("Oui" if t.get("sample_on_fail") else "Non"),
                 html.Td(actions)
             ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
