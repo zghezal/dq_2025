@@ -69,6 +69,37 @@ The application utilizes `dash-bootstrap-components` for a responsive and modern
   - **Renommer**: Modal-based renaming with validation to prevent filename conflicts
   - **Supprimer**: Confirmation modal before permanent deletion of configuration files
 
+## Recent Changes (October 28, 2025)
+
+### **🔥 Spark Integration for Dynamic Data Loading**
+- **Architecture**: Replaced static CSV file reading with dynamic Spark-based data loading
+- **New Module**: `src/spark_inventory_adapter.py`
+  - `build_spark_catalog_from_inventory()`: Converts inventory.yaml datasets to Spark catalog format
+  - `register_inventory_datasets_in_spark()`: Registers inventory datasets in SparkDQContext with cache invalidation
+  - `get_columns_from_spark()`: Retrieves column schemas from Spark DataFrames
+- **SparkDQContext Optimization** (`src/context/spark_context.py`):
+  - Added `peek_schema()` method: Reads dataset schemas WITHOUT triggering full data scans
+  - Optimized for metadata-only operations (no df.count() or expensive Spark actions)
+  - Supports Parquet, CSV, Hive/Delta tables, and Pandas DataFrames
+- **Dynamic Column Retrieval** (`src/utils.py::get_columns_for_dataset()`):
+  - **Priority 1**: SparkDQContext (dynamic Spark loading) - RECOMMENDED
+  - **Priority 2**: Dataiku Dataset (production environment)
+  - **Priority 3**: Local file reading (fallback)
+- **Automatic Dataset Registration** (`src/callbacks/navigation.py`):
+  - `populate_datasets_for_zone()` now automatically registers datasets in Spark catalog
+  - Datasets available for schema inspection as soon as zone is selected
+- **Store Management**:
+  - Consolidated `inventory-datasets-store` declaration in `app.py` to avoid duplicates
+  - Store uses `storage_type="session"` for cross-page persistence
+
+### **Data Flow**
+```
+User selects zone → inventory.yaml → SparkDQContext.catalog → peek_schema() → UI columns
+```
+
+### **Known Issues**
+- **Dash Multi-Page Callback Synchronization**: The `inventory-datasets-store` does not always propagate correctly between `/select-dq-point` and `/build` pages due to Dash's callback execution order in multi-page apps. Datasets may not appear in the Builder dropdown even when URL parameters are correct. This is a framework limitation requiring architectural refactoring of the navigation system.
+
 ## Recent Changes (October 27, 2025)
 
 ### **Data Visualization Enhancement**
