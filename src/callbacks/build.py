@@ -165,7 +165,7 @@ def register_build_callbacks(app):
         Input("url", "search"),
         Input("inventory-datasets-store", "data"),
         State("store_datasets", "data"),
-        prevent_initial_call='initial_duplicate'
+        prevent_initial_call=True
     )
     def update_dataset_options(search, inv_store_data, current_data):
         """
