@@ -21,6 +21,8 @@ def select_dq_point_page():
         # Stores pour datasets, metrics, tests (requis par les callbacks globaux)
         # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
         dcc.Store(id="store_datasets", storage_type="session"),
+    # Store global attendu par les callbacks: inventory-datasets-store
+    dcc.Store(id="inventory-datasets-store", storage_type="session"),
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
         
@@ -34,8 +36,26 @@ def select_dq_point_page():
         dbc.Card([
             dbc.CardHeader(html.H5("📦 Aperçu des datasets", className="mb-0")),
             dbc.CardBody([
-                html.Div(id="datasets-status", className="text-muted", children="Sélectionnez une zone pour voir les datasets disponibles"),
-                html.Div(id="datasets-preview", className="mt-2")
-            ])
+                    html.Div(id="datasets-status", className="text-muted", children="Sélectionnez une zone pour voir les datasets disponibles"),
+                    # Colonne gauche: liste des datasets. Colonne droite: prévisualisation du dataset sélectionné
+                    dbc.Row([
+                        dbc.Col(html.Div(id="datasets-list"), md=6),
+                        dbc.Col(html.Div(id="dataset-detail-preview", className="ms-2"), md=6)
+                    ], className="mt-2")
+                ])
+            # Modal pour prévisualisation (rempli dynamiquement)
+            ,
+            dbc.Modal(
+                [
+                    dbc.ModalHeader(dbc.ModalTitle(id="dataset-preview-title"), close_button=True),
+                    dbc.ModalBody(id="modal-body-content"),
+                    dbc.ModalFooter(
+                        dbc.Button("Fermer", id="close-dataset-preview", className="ml-auto", color="secondary")
+                    )
+                ],
+                id="dataset-preview-modal",
+                size="lg",
+                is_open=False,
+            )
         ], id="datasets-container", className="mt-4")
     ], fluid=True)

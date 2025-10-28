@@ -210,7 +210,7 @@ def register_navigation_callbacks(app):
         return "/build", params
 
     @app.callback(
-        Output("datasets-preview", "children"),
+        Output("datasets-list", "children"),
         Output("datasets-status", "children"),
         Output("inventory-datasets-store", "data"),
         Input("select-zone-dropdown", "value"),
@@ -263,20 +263,126 @@ def register_navigation_callbacks(app):
         if len(datasets) == 0:
             from dash import html
             status_msg = f"Zone '{zone_id}' sélectionnée"
-            preview = html.Em("Aucun dataset trouvé")
+            list_html = html.Em("Aucun dataset trouvé")
         else:
             from dash import html
             status_msg = f"✅ {len(datasets)} dataset(s) disponible(s)"
-            # Afficher la liste des datasets avec leurs alias
+            # Afficher la liste des datasets avec leurs alias — chaque item est cliquable
             dataset_items = []
-            for d in datasets:
+            for i, d in enumerate(datasets):
                 alias = d.get('alias', 'N/A')
                 name = d.get('name', 'N/A')
-                dataset_items.append(html.Li(f"{alias} ({name})", className="small"))
-            preview = html.Ul(dataset_items, className="mb-0")
+                # Ligne avec label et bouton de prévisualisation
+                dataset_items.append(
+                    html.Li([
+                        html.Span(f"{alias} ({name})", className="me-3 small"),
+                        dbc.Button("Prévisualiser", id={"type": "dataset-preview", "index": i}, color="primary", size="sm")
+                    ], className="mb-2")
+                )
+            list_html = html.Ul(dataset_items, className="mb-0 list-unstyled")
         
-        print(f"[DEBUG] Returning preview for {len(datasets)} datasets")
-        return preview, status_msg, store_payload
+        print(f"[DEBUG] Returning list for {len(datasets)} datasets")
+        return list_html, status_msg, store_payload
+
+    # === CALLBACK: clic sur un dataset pour afficher la prévisualisation ===
+    from dash import ALL, callback_context
+
+    @app.callback(
+        Output("modal-body-content", "children"),
+        Output("dataset-preview-modal", "is_open", allow_duplicate=True),
+        Output("dataset-preview-title", "children"),
+        Input({"type": "dataset-preview", "index": ALL}, "n_clicks"),
+        State("inventory-datasets-store", "data"),
+        prevent_initial_call=True,
+    )
+    def show_dataset_preview(n_clicks_list, store_payload):
+        """Affiche schema + un échantillon du dataset cliqué via SparkDQContext."""
+        from dash import html, dash_table
+        import json
+        from flask import current_app
+        from dash import no_update
+
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        # Récupérer l'index cliqué depuis le prop_id déclenché
+        prop = ctx.triggered[0]["prop_id"]  # ex: '{"type":"dataset-preview","index":0}.n_clicks'
+        try:
+            triggered_id = json.loads(prop.split('.n_clicks')[0])
+        except Exception:
+            try:
+                triggered_id = json.loads(prop.split('.')[0])
+            except Exception:
+                return html.Div("Impossible d'identifier l'élément cliqué", className="text-danger")
+
+        idx = triggered_id.get("index")
+        if store_payload is None or "datasets" not in store_payload:
+            return html.Div("Aucun dataset en mémoire.", className="text-muted")
+
+        datasets = store_payload.get("datasets", [])
+        if idx is None or idx >= len(datasets):
+            return html.Div("Sélection invalide.", className="text-danger")
+
+        chosen = datasets[idx]
+        alias = chosen.get("alias")
+
+        spark_ctx = getattr(current_app, 'spark_context', None)
+        if not spark_ctx:
+            return html.Div("Spark context non initialisé", className="text-danger")
+
+        try:
+            # Récupérer colonnes (schéma) sans scan coûteux
+            cols = spark_ctx.peek_schema(alias)
+
+            # Charger un petit échantillon
+            df = spark_ctx.load(alias, cache=False)
+            sample_pdf = df.limit(10).toPandas()
+
+            # Créer une vue temporaire unique pour cette prévisualisation
+            import time
+            temp_name = f"tmp_preview_{alias}_{int(time.time())}"
+            try:
+                df.createOrReplaceTempView(temp_name)
+                temp_info = html.Div(f"Vue temporaire créée: '{temp_name}' (session temporaire)", className="text-muted small mb-2")
+            except Exception:
+                temp_info = html.Div("Impossible de créer la vue temporaire.", className="text-muted small mb-2 text-warning")
+
+            # Construire la carte de preview
+            schema_list = html.Ul([html.Li(c) for c in cols], className="mb-2")
+            table = dash_table.DataTable(
+                data=sample_pdf.to_dict(orient='records'),
+                columns=[{"name": c, "id": c} for c in sample_pdf.columns],
+                page_size=5,
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'left'}
+            )
+
+            card = html.Div([
+                temp_info,
+                html.H6("Schéma", className="mt-1"),
+                schema_list,
+                html.H6("Aperçu", className="mt-2"),
+                table
+            ])
+            title = f"Prévisualisation — {alias}"
+            return card, True, title
+        except Exception as e:
+            err = html.Div(f"Erreur lors de la lecture du dataset: {e}", className="text-danger")
+            return err, True, "Erreur"
+
+    # Callback pour fermer le modal
+    @app.callback(
+        Output("dataset-preview-modal", "is_open", allow_duplicate=True),
+        Input("close-dataset-preview", "n_clicks"),
+        State("dataset-preview-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def close_preview(n, is_open):
+        # ferme le modal lorsque l'utilisateur clique sur le bouton Fermer
+        if not n:
+            return is_open
+        return False
     
     # === CALLBACKS POUR LES TABLEAUX DE VISUALISATION ===
     

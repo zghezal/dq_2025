@@ -123,7 +123,13 @@ class SparkDQContext:
         # Cas 2 : Fichier Parquet
         elif isinstance(source, str) and source.endswith('.parquet'):
             self.logger.info(f"📂 Chargement Parquet: {source}")
-            df = self.spark.read.parquet(source)
+            try:
+                df = self.spark.read.parquet(source)
+            except Exception:
+                # Fallback: parfois le fichier est mal suffixé (csv) ou corrompu.
+                # On tente une lecture CSV pour être tolérant en développement.
+                self.logger.warning(f"⚠️ Échec lecture Parquet pour '{source}', tentative de lecture en CSV")
+                df = self.spark.read.csv(source, header=True, inferSchema=True)
         
         # Cas 3 : Fichier CSV
         elif isinstance(source, str) and source.endswith('.csv'):
@@ -199,7 +205,11 @@ class SparkDQContext:
         # Cas 2 : Fichier Parquet → Lecture schéma seulement
         elif isinstance(source, str) and source.endswith('.parquet'):
             self.logger.info(f"📋 Lecture schéma Parquet: {source}")
-            df = self.spark.read.parquet(source)
+            try:
+                df = self.spark.read.parquet(source)
+            except Exception:
+                self.logger.warning(f"⚠️ Échec lecture Parquet pour '{source}', tentative de lecture en CSV pour le schéma")
+                df = self.spark.read.csv(source, header=True, inferSchema=True)
             return df.columns
         
         # Cas 3 : Fichier CSV → Lecture schéma seulement
