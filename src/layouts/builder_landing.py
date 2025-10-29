@@ -56,17 +56,22 @@ def builder_landing_page():
             )
         ], className="mb-3"),
 
-        # Removed Templates/DQ column per request — keep a single column for actions
+        # Actions + DQ disponibles: left = actions, right = templates applicable au contexte
         dbc.Row([
             dbc.Col([
                 html.H5("Actions"),
-                html.Div("Choisissez 'Initialiser un DQ' pour commencer la construction." , className="text-muted")
-            ], md=12)
-        ], className="mb-4"),
+                html.Div("Choisissez 'Initialiser un DQ' pour commencer la construction.", className="text-muted"),
+                dbc.Row([
+                    dbc.Col(dbc.Button("Initialiser un DQ", id="btn-create-scratch", color="primary", size="lg", className="w-100"), md=12),
+                ], className="mt-3")
+            ], md=6),
 
-        dbc.Row([
-            dbc.Col(dbc.Button("Initialiser un DQ", id="btn-create-scratch", color="primary", size="lg", className="w-100"), md=6),
-            dbc.Col(html.Div("", className=""), md=6)
-        ], className="g-3")
+            dbc.Col([
+                html.H5("DQ disponibles"),
+                html.Div("Liste des templates applicables au contexte sélectionné:", className="text-muted mb-2 small"),
+                # Cet élément est rempli par le callback `render_builder_landing_dqs`
+                html.Div(id="builder-landing-dqs", children=html.Div("Chargement...", className="text-muted"))
+            ], md=6)
+        ], className="mb-4 g-3"),
 
     ], fluid=True)

@@ -18,6 +18,7 @@ from src.layouts.drop_dq import drop_dq_page
 from src.layouts.select_stream import select_stream_page
 from src.layouts.select_project import select_project_page
 from src.layouts.select_dq_point import select_dq_point_page
+from src.layouts.builder_landing import builder_landing_page
 
 # Callbacks
 from src.callbacks.navigation import register_navigation_callbacks
@@ -44,6 +45,16 @@ if spark_ctx is not None:
 # Layout principal
 app.layout = html.Div([
     dcc.Location(id="url", refresh=False),
+    # Store global partagé pour l'inventory (toujours présent dans le layout)
+    dcc.Store(id="inventory-datasets-store", storage_type="session"),
+    # Store global contenant les DQ (configurés / templates) filtrés par contexte
+    dcc.Store(id="inventory-dqs-store", storage_type="session"),
+    # Hidden dropdowns and placeholders used by callbacks so they always exist in the DOM
+    dcc.Dropdown(id="select-zone-dropdown", options=[], style={"display": "none"}),
+    # Placeholders for select-dq-point elements so callbacks can safely update them
+    html.Div(id="datasets-status", style={"display": "none"}),
+    html.Div(id="datasets-list", style={"display": "none"}),
+    html.Div(id="dataset-detail-preview", style={"display": "none"}),
     navbar(),
     html.Div(id="page-content", children=home_page())
 ])
@@ -69,6 +80,7 @@ app.validation_layout = html.Div([
         select_stream_page(),
         select_project_page(),
         select_dq_point_page(),
+        builder_landing_page(),
         # Placeholders for pattern-matching callback IDs used in build callbacks
         html.Div(id={"role": "metric-preview"}, style={"display": "none"}),
         dcc.Dropdown(id={"role": "metric-column", "form": "metric"}, options=[], style={"display": "none"}),

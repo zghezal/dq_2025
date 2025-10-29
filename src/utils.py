@@ -141,38 +141,67 @@ def list_dq_files(folder_id="dq_params", stream=None, project=None, dq_point=Non
     try:
         folder = dataiku.Folder(folder_id)
     except Exception:
-        return []
+        folder = None
     import os
-    path = getattr(folder, "path", None)
-    if not path or not os.path.isdir(path):
-        return []
+    path = getattr(folder, "path", None) if folder is not None else None
     
-    all_files = [
-        fn for fn in os.listdir(path) 
-        if fn.startswith("dq_config_") and (fn.endswith(".json") or fn.endswith(".yaml"))
-    ]
+    if path and os.path.isdir(path):
+        all_files = [
+            fn for fn in os.listdir(path)
+            if fn.startswith("dq_config_") and (fn.endswith(".json") or fn.endswith(".yaml"))
+        ]
+    else:
+        all_files = []
+
+    # Also include local definitions from repo `dq/definitions` so templates stored
+    # in the repository are visible alongside dataiku folder entries.
+    try:
+        from pathlib import Path
+        # repo root is one level above 'src' in this repository layout
+        repo_defs = Path(__file__).resolve().parents[1] / "dq" / "definitions"
+        if repo_defs.exists():
+            for p in sorted(repo_defs.glob("*.yaml")):
+                # Represent local definitions as a path-like name so callers can
+                # distinguish them if needed (we use the relative repo path).
+                # store as 'dq/definitions/<file>' so read_dq_file can resolve it
+                all_files.append(str("dq/definitions/" + p.name))
+    except Exception:
+        pass
     
     # Si aucun filtre, retourner tous les fichiers
     if not stream and not project and not dq_point:
         return sorted(all_files)
-    
-    # Filtrer par contexte
+
+    # Filtrer par contexte. Note: si le fichier n'a pas de clé `context` ou si
+    # la clé est vide pour un sous-champ, on considère cela comme un wildcard
+    # (applicable partout). Ainsi un template sans contexte s'applique à tous.
     filtered_files = []
     for fn in all_files:
-        config = read_dq_file(fn, folder_id)
-        if config and 'context' in config:
-            ctx = config['context']
-            # Vérifier si le contexte correspond
-            match = True
-            if stream and ctx.get('stream') != stream:
+        # For local repo definitions we stored names like 'definitions/xxx.yaml'
+        try:
+            config = read_dq_file(fn, folder_id)
+        except Exception:
+            config = None
+        if not config:
+            continue
+
+        ctx = config.get('context') or {}
+
+        match = True
+        # Only enforce match when the template provides a non-empty value
+        if stream:
+            if ctx.get('stream') and ctx.get('stream') != stream:
                 match = False
-            if project and ctx.get('project') != project:
+        if project:
+            if ctx.get('project') and ctx.get('project') != project:
                 match = False
-            if dq_point and ctx.get('dq_point') != dq_point:
+        if dq_point:
+            if ctx.get('dq_point') and ctx.get('dq_point') != dq_point:
                 match = False
-            if match:
-                filtered_files.append(fn)
-    
+
+        if match:
+            filtered_files.append(fn)
+
     return sorted(filtered_files)
 
 
@@ -200,21 +229,44 @@ def read_dq_file(filename, folder_id="dq_params"):
     import os
     import json
     import yaml
-    
-    path = get_dq_folder_path(folder_id)
-    if not path:
-        return None
-    
-    filepath = os.path.join(path, filename)
-    if not os.path.exists(filepath):
-        return None
-    
+    # If filename looks like a repo-local definition path (e.g. 'dq/definitions/foo.yaml'
+    # or 'definitions/foo.yaml'), open it relative to the repo. This allows callers
+    # that receive combined lists (dataiku + repo definitions) to read local files.
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            if filename.endswith('.json'):
-                return json.load(f)
-            elif filename.endswith('.yaml') or filename.endswith('.yml'):
-                return yaml.safe_load(f)
+        from pathlib import Path
+        # repo root is one level above 'src'
+        repo_root = Path(__file__).resolve().parents[1]
+        # Normalize
+        norm_fn = filename.replace('\\', '/') if isinstance(filename, str) else ''
+        if norm_fn.startswith('dq/definitions') or norm_fn.startswith('definitions/') or ('/definitions/' in norm_fn):
+            candidate = repo_root / norm_fn
+            if candidate.exists():
+                try:
+                    with open(candidate, 'r', encoding='utf-8') as f:
+                        if norm_fn.endswith('.json'):
+                            return json.load(f)
+                        elif norm_fn.endswith('.yaml') or norm_fn.endswith('.yml'):
+                            return yaml.safe_load(f)
+                except Exception:
+                    return None
+
+        # Otherwise, try reading from the configured Dataiku folder path
+        path = get_dq_folder_path(folder_id)
+        if not path:
+            return None
+
+        filepath = os.path.join(path, filename)
+        if not os.path.exists(filepath):
+            return None
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                if filename.endswith('.json'):
+                    return json.load(f)
+                elif filename.endswith('.yaml') or filename.endswith('.yml'):
+                    return yaml.safe_load(f)
+        except Exception:
+            return None
     except Exception:
         return None
     return None

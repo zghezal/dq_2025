@@ -21,8 +21,6 @@ def select_dq_point_page():
         # Stores pour datasets, metrics, tests (requis par les callbacks globaux)
         # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
         dcc.Store(id="store_datasets", storage_type="session"),
-    # Store global attendu par les callbacks: inventory-datasets-store
-    dcc.Store(id="inventory-datasets-store", storage_type="session"),
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
         
