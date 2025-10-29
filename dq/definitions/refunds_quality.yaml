@@ -1,5 +1,9 @@
 id: "refunds_quality"
 label: "Refunds Quality"
+context:
+  stream: "A"
+  project: "P1"
+  dq_point: "raw"
 databases:
   - alias: "refunds"
 metrics:

@@ -1,5 +1,9 @@
 id: "sales_quality_v1"
 label: "Sales Quality v1"
+context:
+  stream: "A"
+  project: "P1"
+  dq_point: "raw"
 databases:
   - alias: "sales_2024"
   - alias: "customers"
