@@ -3,6 +3,7 @@
 import yaml
 from pathlib import Path
 from typing import Dict, List
+import os
 
 try:
     import dataiku
@@ -113,3 +114,7 @@ DATASET_MAPPING = get_dataset_mapping()
 # Client Dataiku
 client = dataiku.api_client()
 project = client.get_default_project()
+
+# Mode debug UI (contrôlé par l'env var DQ_DEBUG_UI)
+_dq_debug_env = os.getenv('DQ_DEBUG_UI', 'false').lower()
+DEBUG_UI = _dq_debug_env in ('1', 'true', 'yes', 'on')

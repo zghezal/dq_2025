@@ -4,6 +4,7 @@ from dash import html, dcc
 from src.metrics_registry import get_metric_options, get_metric_meta
 from src.plugins.discovery import discover_all_plugins
 import dash_bootstrap_components as dbc
+from src.config import DEBUG_UI
 
 
 def build_page():
@@ -199,10 +200,12 @@ def build_page():
                         ] + [html.Li(f"Param: {p.get('name')} ({p.get('type')})") for p in get_metric_meta(pid).get('params', [])])
                     ], className="mb-3") for pid, info in discover_all_plugins(verbose=False).items() if info.category == 'metrics'
                 ])
+                # Hidden placeholders so pattern-matching callback ids exist for validation
             ]),
             dbc.ModalFooter(
                 dbc.Button("Fermer", id="close-metric-help", className="ms-auto")
             ),
+            
         ], id="metric-help-modal", size="lg", is_open=False),
         
         # Modal de documentation pour les tests
@@ -225,7 +228,20 @@ def build_page():
                 dbc.Button("Fermer", id="close-test-help", className="ms-auto")
             ),
         ], id="test-help-modal", size="lg", is_open=False),
-        
+
+        # Debug panel (affiché uniquement si DEBUG_UI=True)
+        html.Div(
+            id="build-debug-panel",
+            children=[
+                html.H5("Debug (DEBUG_UI active)"),
+                html.Div("ds-picker options:"),
+                html.Pre(id="debug-ds-picker-options", style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
+                html.Div("store_datasets:"),
+                html.Pre(id="debug-store-datasets", style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
+            ],
+            style={"display": "block" if DEBUG_UI else "none", "marginTop": "1rem"}
+        ),
+
     ], fluid=True)
 
 # Placeholder global pour les callbacks qui ciblent {"role": "metric-preview"}

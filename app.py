@@ -49,12 +49,10 @@ app.layout = html.Div([
     dcc.Store(id="inventory-datasets-store", storage_type="session"),
     # Store global contenant les DQ (configurés / templates) filtrés par contexte
     dcc.Store(id="inventory-dqs-store", storage_type="session"),
-    # Hidden dropdowns and placeholders used by callbacks so they always exist in the DOM
-    dcc.Dropdown(id="select-zone-dropdown", options=[], style={"display": "none"}),
-    # Placeholders for select-dq-point elements so callbacks can safely update them
-    html.Div(id="datasets-status", style={"display": "none"}),
-    html.Div(id="datasets-list", style={"display": "none"}),
-    html.Div(id="dataset-detail-preview", style={"display": "none"}),
+    # Note: Ne pas dupliquer ici les components (dropdowns/divs) qui sont
+    # définis dans les pages (ex: select_dq_point_page). Les duplications
+    # d'identifiants empêchaient les callbacks d'atteindre les éléments
+    # visibles — on conserve uniquement les stores globaux ici.
     navbar(),
     html.Div(id="page-content", children=home_page())
 ])

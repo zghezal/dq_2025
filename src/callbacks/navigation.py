@@ -23,6 +23,7 @@ from src.layouts.dashboard import dashboard_page
 from src.layouts.check_drop_dashboard import check_drop_dashboard_page
 from src.layouts.dq_management_dashboard import dq_management_dashboard_page
 from src.layouts.builder_landing import builder_landing_page
+from src.config import DEBUG_UI
 
 
 def register_navigation_callbacks(app):
@@ -106,6 +107,10 @@ def register_navigation_callbacks(app):
             stream_id = q.get('stream', [None])[0]
             project_id = q.get('project', [None])[0]
         zones = get_zones(stream_id=stream_id, project_id=project_id)
+        try:
+            print(f"[DEBUG_UI] populate_zone_dropdown: stream={stream_id} project={project_id} zones_found={len(zones)}")
+        except Exception:
+            pass
         options = [{"label": f"{z['label']} ({z.get('datasets_count', 0)} datasets)", "value": z['id']} for z in zones]
         return options
 
@@ -213,6 +218,10 @@ def register_navigation_callbacks(app):
 
         try:
             datasets = get_datasets_for_zone(zone_id, stream_id=stream, project_id=project) or []
+            try:
+                print(f"[DEBUG_UI] populate_datasets_for_zone: stream={stream} project={project} zone={zone_id} datasets={len(datasets)}")
+            except Exception:
+                pass
             store_payload = {"zone": zone_id, "datasets": datasets}
 
             # register in spark
@@ -417,6 +426,127 @@ def register_navigation_callbacks(app):
             return html.Div(f"Stream: {stream} — Project: {project} — Zone: {zone}")
 
     @app.callback(
+        Output("inventory-datasets-store", "data", allow_duplicate=True),
+        Output("inventory-dqs-store", "data", allow_duplicate=True),
+        Input("url", "search"),
+        Input("url", "pathname"),
+        State("inventory-datasets-store", "data"),
+        prevent_initial_call=True
+    )
+    def ensure_inventory_store(search, pathname, inventory_store):
+        """Si l'utilisateur arrive directement sur builder-landing (ex: via URL)
+        et que le store d'inventaire est vide, remplir automatiquement le
+        store depuis l'inventory.yaml via get_datasets_for_zone.
+
+        Cela couvre les cas où la navigation n'a pas transité par
+        /select-dq-point (ex: arrivée directe depuis un lien externe).
+        """
+        if pathname != "/builder-landing":
+            return no_update, no_update
+
+        # Si le store contient déjà des datasets, rien à faire
+        try:
+            if inventory_store and inventory_store.get('datasets'):
+                return no_update, no_update
+        except Exception:
+            pass
+
+        # Extraire stream/project/zone depuis l'URL
+        stream = project = zone = None
+        if search:
+            q = urlparse.parse_qs(search.lstrip('?'))
+            stream = q.get('stream', [None])[0]
+            project = q.get('project', [None])[0]
+            zone = q.get('zone', [None])[0]
+
+        if not all([stream, project, zone]):
+            return no_update, no_update
+
+        try:
+            datasets = get_datasets_for_zone(zone, stream_id=stream, project_id=project) or []
+            store_payload = {"zone": zone, "datasets": datasets}
+
+            # Register in spark if available
+            spark_ctx = getattr(current_app, 'spark_context', None)
+            if spark_ctx and datasets:
+                try:
+                    register_inventory_datasets_in_spark(spark_ctx, datasets)
+                except Exception as e:
+                    print(f"[DEBUG] Erreur enregistrement Spark (ensure_store): {e}")
+
+            # Discover DQs (light) — reuse existing discovery logic pattern
+            from src.utils import list_dq_files, read_dq_file
+            dqs = []
+            try:
+                dq_files = list_dq_files('dq_params', stream=stream, project=project, dq_point=zone)
+                for fn in dq_files:
+                    cfg = read_dq_file(fn, 'dq_params') or {}
+                    label = cfg.get('name') or fn
+                    path = f'dq_params/{fn}'
+                    dqs.append({"id": fn, "label": label, "path": path, "databases": cfg.get('databases', []), "context": cfg.get('context', {})})
+            except Exception:
+                pass
+
+            # local YAML definitions
+            from pathlib import Path
+            import yaml
+            defs_dir = Path(__file__).resolve().parents[2] / "dq" / "definitions"
+            if defs_dir.exists():
+                for p in sorted(defs_dir.glob("*.yaml")):
+                    try:
+                        with open(p, 'r', encoding='utf-8') as f:
+                            doc = yaml.safe_load(f) or {}
+                        ctx = doc.get('context') or {}
+                        match = True
+                        if stream and ctx.get('stream') and ctx.get('stream') != stream:
+                            match = False
+                        if project and ctx.get('project') and ctx.get('project') != project:
+                            match = False
+                        if zone and ctx.get('dq_point') and ctx.get('dq_point') != zone:
+                            match = False
+                        if match:
+                            fn2 = p.name
+                            label2 = doc.get('name') or p.stem
+                            path2 = f'dq/definitions/{fn2}'
+                            dqs.append({"id": fn2, "label": label2, "path": path2, "databases": doc.get('databases', []), "context": ctx})
+                    except Exception:
+                        pass
+
+            dqs_payload = {"dqs": dqs}
+            return store_payload, dqs_payload
+        except Exception as e:
+            print(f"[DEBUG] Erreur ensure_inventory_store: {e}")
+            return no_update, no_update
+
+    # Debug panel updater (seulement si DEBUG_UI activé)
+    if DEBUG_UI:
+        @app.callback(
+            Output("debug-inventory-json", "children"),
+            Output("debug-dqs-json", "children"),
+            Input("inventory-datasets-store", "data"),
+            Input("inventory-dqs-store", "data"),
+            Input("url", "pathname"),
+            prevent_initial_call=False
+        )
+        def render_debug_stores(inv_store, dqs_store, pathname):
+            # N'affiche que si on est sur builder-landing
+            try:
+                if pathname != "/builder-landing":
+                    return "", ""
+            except Exception:
+                pass
+            import json
+            try:
+                inv_text = json.dumps(inv_store, indent=2, ensure_ascii=False) if inv_store else "(empty)"
+            except Exception:
+                inv_text = str(inv_store)
+            try:
+                dqs_text = json.dumps(dqs_store, indent=2, ensure_ascii=False) if dqs_store else "(empty)"
+            except Exception:
+                dqs_text = str(dqs_store)
+            return inv_text, dqs_text
+
+    @app.callback(
         Output("url", "pathname", allow_duplicate=True),
         Output("url", "search", allow_duplicate=True),
         Input("btn-create-scratch", "n_clicks"),
@@ -612,6 +742,10 @@ def register_navigation_callbacks(app):
             return []
         from src.config import STREAMS
         projects = STREAMS.get(stream_id, [])
+        try:
+            print(f"[DEBUG_UI] update_project_options: stream={stream_id} projects_found={len(projects)}")
+        except Exception:
+            pass
         return [{"label": p, "value": p} for p in projects]
 
     @app.callback(
