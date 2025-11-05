@@ -325,7 +325,14 @@ def generate_test_description(test):
     if lower_val is not None or upper_val is not None:
         lower_display = lower_val if lower_val is not None else "-∞"
         upper_display = upper_val if upper_val is not None else "+∞"
-        parts.append(f"Intervalle: [{lower_display}, {upper_display}]")
+        parts.append(f"Intervalle général: [{lower_display}, {upper_display}]")
+    
+    # Ajouter les règles par colonne pour interval_check
+    column_rules = spec.get("column_rules") or []
+    if column_rules:
+        rules_count = len([r for r in column_rules if r.get("columns")])
+        if rules_count > 0:
+            parts.append(f"+ {rules_count} règle(s) par colonne")
 
     pattern = test.get("pattern")
     if pattern:
@@ -678,7 +685,12 @@ def register_build_callbacks(app):
 
         spark_ctx = getattr(current_app, 'spark_context', None)
         if not spark_ctx:
-            return html.Div("Spark context non initialisé", className="text-danger"), True, "Erreur"
+            message = html.Div([
+                html.P("⚠️ Prévisualisation du schéma non disponible", className="text-warning mb-2"),
+                html.Small("Le contexte Spark n'est pas initialisé. Cette fonctionnalité nécessite un environnement Spark configuré.", 
+                          className="text-muted")
+            ])
+            return message, True, f"Schéma: {alias}"
 
         try:
             catalog = getattr(spark_ctx, "catalog", {})
@@ -1465,6 +1477,7 @@ def register_build_callbacks(app):
         Output("store_metrics", "data"),
         Output("metrics-list", "children"),
         Output("metric-tabs", "active_tab"),
+        Output("store_edit_metric", "data"),
         Input("add-metric", "n_clicks"),
         State({"role": "metric-preview"}, "children", ALL),
         State("store_metrics", "data"),
@@ -1482,6 +1495,7 @@ def register_build_callbacks(app):
         State({"role": "missing-rate-filter", "name": ALL}, "value"),
         State("url", "search"),
         State("inventory-datasets-store", "data"),
+        State("store_edit_metric", "data"),
     )
     def add_metric(
         n,
@@ -1500,11 +1514,16 @@ def register_build_callbacks(app):
         metric_comments,
         missing_filter_values,
         search,
-        inventory_store
+        inventory_store,
+        edit_metric_data
     ):
-        """Ajoute une métrique au store et met à jour la liste"""
+        """Ajoute ou modifie une métrique au store et met à jour la liste"""
         if not n:
-            return "", metrics, "", no_update
+            return "", metrics, "", no_update, no_update
+        
+        # Vérifier si on est en mode édition
+        edit_mode = edit_metric_data and isinstance(edit_metric_data, dict) and "metric" in edit_metric_data
+        edit_index = edit_metric_data.get("index") if edit_mode else None
         
         stream_ctx, project_ctx, zone_ctx = _resolve_context(search, inventory_store)
         selected_filter = first(missing_filter_values)
@@ -1616,35 +1635,49 @@ def register_build_callbacks(app):
             m.pop("condition", None)
 
         metrics = (metrics or [])
-        existing_ids = {x.get("id") for x in metrics}
         
-        # Générer un ID unique au format M-XXX si nécessaire
-        if not m.get("id") or m.get("id") in existing_ids:
-            # Extraire les numéros existants
-            existing_numbers = []
-            for metric in metrics:
-                metric_id = metric.get("id", "")
-                m_match = re.match(r"^M-(\d+)$", str(metric_id))
-                if m_match:
-                    try:
-                        num = int(m_match.group(1))
-                        existing_numbers.append(num)
-                    except (ValueError, IndexError):
-                        pass
+        # En mode édition, garder l'ID original
+        if edit_mode and edit_metric_data.get("metric"):
+            original_metric = edit_metric_data.get("metric")
+            m["id"] = original_metric.get("id")
+        else:
+            # Mode ajout: générer un ID unique
+            existing_ids = {x.get("id") for x in metrics}
+            
+            if not m.get("id") or m.get("id") in existing_ids:
+                # Extraire les numéros existants
+                existing_numbers = []
+                for metric in metrics:
+                    metric_id = metric.get("id", "")
+                    m_match = re.match(r"^M-(\d+)$", str(metric_id))
+                    if m_match:
+                        try:
+                            num = int(m_match.group(1))
+                            existing_numbers.append(num)
+                        except (ValueError, IndexError):
+                            pass
 
-            # Trouver le prochain numéro disponible
-            next_num = 1
-            while next_num in existing_numbers:
-                next_num += 1
+                # Trouver le prochain numéro disponible
+                next_num = 1
+                while next_num in existing_numbers:
+                    next_num += 1
 
-            m["id"] = f"M-{next_num:03d}"
+                m["id"] = f"M-{next_num:03d}"
 
         if m.get("identification") is None:
             m["identification"] = {}
         if isinstance(m.get("identification"), dict):
             m["identification"]["metric_id"] = m.get("id")
         
-        metrics.append(m)
+        # Mode édition: remplacer la métrique existante
+        if edit_mode and edit_index is not None and 0 <= edit_index < len(metrics):
+            metrics[edit_index] = m
+            status_message = f"✅ Métrique modifiée: {m['id']}"
+        else:
+            # Mode ajout: ajouter une nouvelle métrique
+            metrics.append(m)
+            status_message = f"✅ Métrique ajoutée: {m['id']}"
+        
         items = [
             html.Pre(
                 json.dumps(x, ensure_ascii=False, indent=2),
@@ -1652,21 +1685,23 @@ def register_build_callbacks(app):
                 style={"background": "#111", "color": "#eee"}
             ) for x in metrics
         ]
-        return f"Métrique ajoutée: {m['id']}", metrics, html.Div(items), "tab-metric-viz"
+        
+        # Réinitialiser le store d'édition après l'ajout/modification
+        return status_message, metrics, html.Div(items), "tab-metric-viz", None
 
     @app.callback(
         Output("metrics-table-container", "children"),
         Input("store_metrics", "data")
     )
     def display_metrics_table(metrics):
-        """Affiche les métriques dans un tableau structuré (4 colonnes + Actions)"""
+        """Affiche les métriques dans un tableau structuré avec actions"""
         if not metrics:
             return dbc.Alert("Aucune métrique créée. Utilisez l'onglet 'Créer' pour ajouter des métriques.", color="info")
         
-        # Préparer les données pour le tableau
+        # Helper pour formater les paramètres spécifiques
         def _describe_specific(spec: dict) -> str:
             if not isinstance(spec, dict) or not spec:
-                return ""
+                return "-"
             parts = []
             for key, value in spec.items():
                 if value in (None, "", [], {}):
@@ -1678,97 +1713,85 @@ def register_build_callbacks(app):
                 else:
                     rendered = str(value)
                 parts.append(f"{key}: {rendered}")
-            return " | ".join(parts)
+            return " | ".join(parts) if parts else "-"
 
-        def _first_value(data, key, default=""):
-            if isinstance(data, dict):
-                return data.get(key, default)
-            return default
-
-        table_data = []
-        for m in metrics:
+        # Créer les lignes du tableau avec boutons d'action
+        table_rows = []
+        
+        # En-tête
+        header = html.Tr([
+            html.Th("ID"),
+            html.Th("Type"),
+            html.Th("Nom"),
+            html.Th("Description"),
+            html.Th("Commentaires"),
+            html.Th("Export"),
+            html.Th("Owner"),
+            html.Th("Paramétrage spécifique"),
+            html.Th("Actions", style={"width": "200px"})
+        ])
+        
+        # Lignes de données
+        for idx, m in enumerate(metrics):
+            metric_id = m.get("id", "N/A")
+            metric_type = m.get("type", "-")
+            
             general = m.get("general") or {}
             specific = m.get("specific") or {}
             nature = m.get("nature") or {}
-            identification = m.get("identification") or {}
-
-            export_flag = bool(general.get("export")) if isinstance(general, dict) else False
-            description = generate_metric_description(m)
-
-            params = m.get("params") or {}
-            dataset_val = params.get("dataset") if isinstance(params, dict) else ""
-            column_val = params.get("column") if isinstance(params, dict) else ""
-
-            table_data.append({
-                "ID": m.get("id", "-"),
-                "Type": m.get("type", "-"),
-                "Nature - Nom": _first_value(nature, "name"),
-                "Nature - Description": _first_value(nature, "description"),
-                "Nature - Commentaires": _first_value(nature, "preliminary_comments"),
-                "Identification - Metric ID": identification.get("metric_id") or m.get("id", "-"),
-                "Général - Export": "Oui" if export_flag else "Non",
-                "Général - Owner": _first_value(general, "owner"),
-                "Général - Fréquence": _first_value(general, "frequency"),
-                "Dataset": dataset_val,
-                "Colonnes": ", ".join(column_val) if isinstance(column_val, list) else column_val,
-                "Paramétrage spécifique (résumé)": _describe_specific(specific),
-                "Description": description,
-                "_raw": json.dumps(m, ensure_ascii=False)
-            })
+            
+            name = nature.get("name") or "-"
+            description = nature.get("description") or "-"
+            comments = nature.get("preliminary_comments") or "-"
+            export_flag = "Oui" if bool(general.get("export")) else "Non"
+            owner = general.get("owner") or "-"
+            specific_summary = _describe_specific(specific)
+            
+            actions = html.Div([
+                dbc.Button(
+                    "✏️", 
+                    id={"type": "edit-metric", "index": idx},
+                    color="warning",
+                    size="sm",
+                    className="me-1",
+                    title="Modifier"
+                ),
+                dbc.Button(
+                    "📋", 
+                    id={"type": "duplicate-metric", "index": idx},
+                    color="info",
+                    size="sm",
+                    className="me-1",
+                    title="Dupliquer"
+                ),
+                dbc.Button(
+                    "🗑️", 
+                    id={"type": "delete-metric", "index": idx},
+                    color="danger",
+                    size="sm",
+                    title="Supprimer"
+                )
+            ])
+            
+            row = html.Tr([
+                html.Td(metric_id),
+                html.Td(metric_type),
+                html.Td(name, style={"maxWidth": "150px"}),
+                html.Td(description, style={"fontSize": "0.85em", "maxWidth": "200px"}),
+                html.Td(comments, style={"fontSize": "0.85em", "maxWidth": "200px"}),
+                html.Td(export_flag),
+                html.Td(owner),
+                html.Td(specific_summary, style={"fontSize": "0.9em"}),
+                html.Td(actions)
+            ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
+            table_rows.append(row)
         
-        columns = [
-            {"name": "ID", "id": "ID"},
-            {"name": "Type", "id": "Type"},
-            {"name": "Nature - Nom", "id": "Nature - Nom"},
-            {"name": "Nature - Description", "id": "Nature - Description"},
-            {"name": "Nature - Commentaires", "id": "Nature - Commentaires"},
-            {"name": "Identification - Metric ID", "id": "Identification - Metric ID"},
-            {"name": "Général - Export", "id": "Général - Export"},
-            {"name": "Général - Owner", "id": "Général - Owner"},
-            {"name": "Général - Fréquence", "id": "Général - Fréquence"},
-            {"name": "Dataset", "id": "Dataset"},
-            {"name": "Colonnes", "id": "Colonnes"},
-            {"name": "Paramétrage spécifique (résumé)", "id": "Paramétrage spécifique (résumé)"},
-            {"name": "Description", "id": "Description"},
-        ]
-
-        table = dash_table.DataTable(
-            data=table_data,
-            columns=columns,
-            style_table={'overflowX': 'auto'},
-            style_cell={
-                'textAlign': 'left',
-                'padding': '10px',
-                'whiteSpace': 'pre-line',
-                'height': 'auto',
-            },
-            style_header={
-                'backgroundColor': '#f8f9fa',
-                'fontWeight': 'bold'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f8f9fa'
-                }
-            ],
-            style_cell_conditional=[
-                {'if': {'column_id': 'ID'}, 'width': '8%'},
-                {'if': {'column_id': 'Type'}, 'width': '10%'},
-                {'if': {'column_id': 'Type'}, 'width': '8%'},
-                {'if': {'column_id': 'Nature - Nom'}, 'width': '12%'},
-                {'if': {'column_id': 'Nature - Description'}, 'width': '18%'},
-                {'if': {'column_id': 'Nature - Commentaires'}, 'width': '18%'},
-                {'if': {'column_id': 'Identification - Metric ID'}, 'width': '12%'},
-                {'if': {'column_id': 'Général - Export'}, 'width': '8%'},
-                {'if': {'column_id': 'Général - Owner'}, 'width': '12%'},
-                {'if': {'column_id': 'Général - Fréquence'}, 'width': '12%'},
-                {'if': {'column_id': 'Dataset'}, 'width': '12%'},
-                {'if': {'column_id': 'Colonnes'}, 'width': '18%'},
-                {'if': {'column_id': 'Paramétrage spécifique (résumé)'}, 'width': '24%'},
-                {'if': {'column_id': 'Description'}, 'width': '24%'},
-            ],
-            markdown_options={"link_target": "_blank"}
+        table = dbc.Table(
+            [html.Thead(header), html.Tbody(table_rows)],
+            bordered=True,
+            hover=True,
+            responsive=True,
+            striped=False
         )
 
         # Calculer les datasets virtuels (colonnes produites)
@@ -1880,6 +1903,7 @@ def register_build_callbacks(app):
         return html.Div([
             html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
             table,
+            html.Div(id="metric-action-status", className="mt-2"),
             *extra_blocks
         ])
 
@@ -3110,21 +3134,44 @@ def register_build_callbacks(app):
         """Génère la prévisualisation de la configuration finale"""
         q = parse_query(search or "")
         cfg = cfg_template()
-        run_ctx_data = run_context or {}
-        context_quarter = run_ctx_data.get("quarter") or q.get("quarter")
+        
+        # Context avec zone ajoutée
         cfg["context"] = {
-            "quarter": context_quarter,
             "stream": q.get("stream"),
-            "project": q.get("project")
+            "project": q.get("project"),
+            "zone": q.get("zone"),
+            "dq_point": q.get("dq_point")
         }
-        cfg["run_context"] = run_ctx_data
+        
         cfg["databases"] = datasets or []
-        cfg["metrics"] = sanitize_metrics(metrics or [])
-        cfg["tests"] = sanitize_tests(tests or [])
-        cfg["orchestration"]["order"] = [
-            *(m.get("id") for m in (metrics or []) if m.get("id")),
-            *(t.get("id") for t in (tests or []) if t.get("id"))
-        ]
+        
+        # Convertir metrics en dictionnaire avec ID comme clé
+        metrics_dict = {}
+        for m in (metrics or []):
+            metric_id = m.get("id")
+            if metric_id:
+                # Retirer les paramètres dataset, column, where, expr du niveau params
+                metric_copy = {k: v for k, v in m.items() if k != "id"}
+                # Nettoyer les params non désirés
+                if "params" in metric_copy:
+                    metric_copy["params"] = {k: v for k, v in metric_copy["params"].items() 
+                                            if k not in ["dataset", "column", "where", "expr"]}
+                metrics_dict[metric_id] = metric_copy
+        
+        # Convertir tests en dictionnaire avec ID comme clé
+        tests_dict = {}
+        for t in (tests or []):
+            test_id = t.get("id")
+            if test_id:
+                test_copy = {k: v for k, v in t.items() if k != "id"}
+                # Supprimer lower_enabled et upper_enabled du specific
+                if "specific" in test_copy:
+                    test_copy["specific"] = {k: v for k, v in test_copy["specific"].items() 
+                                           if k not in ["lower_enabled", "upper_enabled"]}
+                tests_dict[test_id] = test_copy
+        
+        cfg["metrics"] = metrics_dict
+        cfg["tests"] = tests_dict
         try:
             if fmt == "yaml":
                 return yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)
@@ -3169,6 +3216,52 @@ def register_build_callbacks(app):
             return f"Erreur de publication : {e}"
 
     # ===== Tableaux de visualisation =====
+    
+    def format_interval_bounds_display(spec_block):
+        """
+        Formate l'affichage des bornes pour les tests interval_check.
+        Inclut les bornes générales et les règles par colonne.
+        """
+        if not spec_block:
+            return "-"
+        
+        lines = []
+        
+        # Bornes générales (nouvelle structure avec bounds)
+        bounds = spec_block.get("bounds", {})
+        lower_val = bounds.get("lower")
+        upper_val = bounds.get("upper")
+        
+        if lower_val is not None or upper_val is not None:
+            lower_display = str(lower_val) if lower_val is not None else "-∞"
+            upper_display = str(upper_val) if upper_val is not None else "+∞"
+            lines.append(html.Div([
+                html.Strong("Général: "),
+                html.Span(f"[{lower_display}, {upper_display}]")
+            ]))
+        
+        # Règles par colonne
+        column_rules = spec_block.get("column_rules") or []
+        if column_rules:
+            lines.append(html.Div(html.Strong("Règles par colonne:"), className="mt-2"))
+            for idx, rule in enumerate(column_rules):
+                cols = rule.get("columns") or []
+                lower = rule.get("lower")
+                upper = rule.get("upper")
+                
+                if not cols:
+                    continue
+                    
+                cols_str = ", ".join(str(c) for c in cols)
+                lower_display = str(lower) if lower is not None else "-∞"
+                upper_display = str(upper) if upper is not None else "+∞"
+                
+                lines.append(html.Div([
+                    html.Span(f"  • {cols_str}: ", className="text-muted"),
+                    html.Span(f"[{lower_display}, {upper_display}]")
+                ], style={"fontSize": "0.9em", "marginLeft": "1em"}))
+        
+        return html.Div(lines) if lines else "-"
     
     @app.callback(
         Output("tests-table-container", "children"),
@@ -3250,14 +3343,8 @@ def register_build_callbacks(app):
                     source_info = database
                     column_info = cols_display
 
-                lower_enabled = spec.get("lower_enabled")
-                upper_enabled = spec.get("upper_enabled")
-                lower_val = spec.get("lower_value") if lower_enabled else None
-                upper_val = spec.get("upper_value") if upper_enabled else None
-                if lower_val is not None or upper_val is not None:
-                    lower_display = lower_val if lower_val is not None else "-∞"
-                    upper_display = upper_val if upper_val is not None else "+∞"
-                    range_info = f"[{lower_display}, {upper_display}]"
+                # Utiliser la fonction dédiée pour formater les bornes avec l'arborescence des règles
+                range_info = format_interval_bounds_display(spec)
             
             actions = html.Div([
                 dbc.Button(
@@ -3360,19 +3447,18 @@ def register_build_callbacks(app):
         return new_metrics, new_tests, dbc.Alert(status_msg, color="success", dismissable=True, duration=4000)
     
     @app.callback(
-        [Output("metric-type", "value", allow_duplicate=True),
+        [Output("store_metrics", "data", allow_duplicate=True),
          Output("metric-tabs", "active_tab", allow_duplicate=True),
          Output("metric-action-status", "children", allow_duplicate=True)],
-        Input({"type": "edit-metric", "index": ALL}, "n_clicks"),
+        Input({"type": "duplicate-metric", "index": ALL}, "n_clicks"),
         State("store_metrics", "data"),
         prevent_initial_call=True
     )
-    def edit_metric(n_clicks_list, metrics):
-        """Charge la métrique pour modification"""
+    def duplicate_metric(n_clicks_list, metrics):
+        """Duplique une métrique avec un nouvel ID"""
         if not any(n_clicks_list):
             return no_update, no_update, no_update
         
-        # Trouver quel bouton a été cliqué
         clicked_idx = None
         for idx, n in enumerate(n_clicks_list):
             if n:
@@ -3382,28 +3468,154 @@ def register_build_callbacks(app):
         if clicked_idx is None or not metrics or clicked_idx >= len(metrics):
             return no_update, no_update, no_update
         
+        # Copier la métrique
+        metric_to_duplicate = copy.deepcopy(metrics[clicked_idx])
+        original_id = metric_to_duplicate.get("id", "metric")
+        
+        # Générer un nouvel ID unique en gardant le numéro original
+        existing_ids = {m.get("id") for m in metrics}
+        
+        # Si l'ID se termine déjà par _copy ou _copy2, etc., on retire ce suffixe pour revenir à la base
+        if "_copy" in original_id:
+            base_id = original_id.split("_copy")[0]
+        else:
+            base_id = original_id
+        
+        # Générer un nouvel ID avec _copy, _copy2, _copy3, etc.
+        counter = 1
+        new_id = f"{base_id}_copy"
+        while new_id in existing_ids:
+            counter += 1
+            new_id = f"{base_id}_copy{counter}"
+        
+        # Mettre à jour l'ID
+        metric_to_duplicate["id"] = new_id
+        if metric_to_duplicate.get("identification"):
+            metric_to_duplicate["identification"]["metric_id"] = new_id
+        
+        # Ajouter au store
+        new_metrics = metrics + [metric_to_duplicate]
+        
+        status_msg = f"✅ Métrique dupliquée: '{original_id}' → '{new_id}'"
+        
+        return new_metrics, "tab-metric-viz", dbc.Alert(status_msg, color="success", dismissable=True, duration=4000)
+    
+    @app.callback(
+        [Output("metric-type", "value", allow_duplicate=True),
+         Output("store_edit_metric", "data", allow_duplicate=True),
+         Output("metric-tabs", "active_tab", allow_duplicate=True),
+         Output("metric-action-status", "children", allow_duplicate=True)],
+        Input({"type": "edit-metric", "index": ALL}, "n_clicks"),
+        State("store_metrics", "data"),
+        prevent_initial_call=True
+    )
+    def edit_metric(n_clicks_list, metrics):
+        """Active le mode édition et charge le type de métrique"""
+        if not any(n_clicks_list):
+            return no_update, no_update, no_update, no_update
+        
+        # Trouver quel bouton a été cliqué
+        clicked_idx = None
+        for idx, n in enumerate(n_clicks_list):
+            if n:
+                clicked_idx = idx
+                break
+        
+        if clicked_idx is None or not metrics or clicked_idx >= len(metrics):
+            return no_update, no_update, no_update, no_update
+        
         # Récupérer la métrique à modifier
         metric = metrics[clicked_idx]
+        metric_id = metric.get("id", "")
+        metric_type = metric.get("type", "")
         
-        # Créer un message détaillé avec toutes les valeurs
-        values_text = html.Div([
-            html.P(f"✏️ Pour modifier la métrique '{metric.get('id')}', utilisez les valeurs suivantes :", className="mb-2"),
-            html.Ul([
-                html.Li(f"Type: {metric.get('type', 'N/A')}"),
-                html.Li(f"ID: {metric.get('id', 'N/A')}"),
-                html.Li(f"Database: {metric.get('database', 'N/A')}") if metric.get('database') else None,
-                html.Li(f"Colonne: {metric.get('column', 'N/A')}") if metric.get('column') else None,
-                html.Li(f"Where: {metric.get('where', 'N/A')}") if metric.get('where') else None,
-                html.Li(f"Expression: {metric.get('expr', 'N/A')}") if metric.get('expr') else None,
-            ]),
-            html.P("📝 Saisissez ces valeurs dans le formulaire, puis cliquez sur 'Ajouter' pour mettre à jour.", className="mt-2 text-primary")
-        ])
+        # Stocker toute la métrique pour le mode édition
+        edit_data = {
+            "index": clicked_idx,
+            "metric": copy.deepcopy(metric)
+        }
+        
+        status_msg = f"✏️ Mode édition: Métrique '{metric_id}' en cours de chargement..."
         
         return (
-            metric.get("type", ""),  # Pré-sélectionner le type
-            "tab-metric-create",  # Basculer vers l'onglet de création
-            dbc.Alert(values_text, color="info", dismissable=True)
+            metric_type,  # Déclenche la génération du formulaire
+            edit_data,    # Stocke la métrique complète
+            "tab-metric-create",
+            dbc.Alert(status_msg, color="warning", dismissable=True, duration=4000)
         )
+    
+    @app.callback(
+        [Output({"role": "metric-id"}, "value", allow_duplicate=True),
+         Output({"role": "metric-db"}, "value", allow_duplicate=True),
+         Output({"role": "metric-column", "form": "metric"}, "value", allow_duplicate=True),
+         Output({"role": "metric-where"}, "value", allow_duplicate=True),
+         Output({"role": "metric-expr"}, "value", allow_duplicate=True),
+         Output({"role": "metric-nature", "field": "description"}, "value", allow_duplicate=True),
+         Output({"role": "metric-nature", "field": "comments"}, "value", allow_duplicate=True),
+         Output({"role": "metric-general", "field": "export"}, "value", allow_duplicate=True),
+         Output("metric-action-status", "children", allow_duplicate=True)],
+        Input("metric-params", "children"),
+        State("store_edit_metric", "data"),
+        prevent_initial_call=True
+    )
+    def populate_edit_form(form_content, edit_data):
+        """Remplit le formulaire une fois qu'il est généré"""
+        if not edit_data or not isinstance(edit_data, dict) or "metric" not in edit_data:
+            return [no_update] * 9
+        
+        metric = edit_data.get("metric", {})
+        metric_id = metric.get("id", "")
+        
+        # Extraire le numéro de l'ID
+        id_number = ""
+        if metric_id.startswith("M-"):
+            id_number = metric_id[2:].lstrip("0") or "0"
+        
+        # Extraire les valeurs
+        database = metric.get("database", "")
+        
+        # Gérer les colonnes
+        column_value = metric.get("column", "")
+        if isinstance(column_value, list):
+            column = column_value
+        else:
+            column = column_value if column_value else ""
+        
+        where = metric.get("where", "")
+        expr = metric.get("expr", "")
+        
+        # Extraire les informations de nature
+        nature = metric.get("nature", {})
+        description = nature.get("description", "") if nature else ""
+        comments = nature.get("preliminary_comments", "") if nature else ""
+        
+        # Extraire l'export
+        general = metric.get("general", {})
+        export_value = ["export"] if general.get("export", False) else []
+        
+        status_msg = f"✏️ Métrique '{metric_id}' chargée. Modifiez et cliquez sur 'Ajouter' pour enregistrer."
+        
+        return (
+            id_number,
+            database,
+            column,
+            where,
+            expr,
+            description,
+            comments,
+            export_value,
+            dbc.Alert(status_msg, color="info", dismissable=True, duration=5000)
+        )
+    
+    @app.callback(
+        Output("add-metric", "children"),
+        Input("store_edit_metric", "data")
+    )
+    def update_metric_button_text(edit_data):
+        """Change le texte du bouton selon le mode (ajout/édition)"""
+        if edit_data and isinstance(edit_data, dict) and "metric" in edit_data:
+            return "💾 Enregistrer les modifications"
+        return "✅ Ajouter la métrique"
     
     @app.callback(
         Output("metric-action-status", "children", allow_duplicate=True),

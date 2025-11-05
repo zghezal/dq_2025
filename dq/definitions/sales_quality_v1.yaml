@@ -3,19 +3,23 @@ label: "Sales Quality v1"
 context:
   stream: "A"
   project: "P1"
-  dq_point: "raw"
+  zone: "raw"
+  dq_point: "quality_check"
 databases:
   - alias: "sales_2024"
   - alias: "customers"
 metrics:
-  - id: "missing_rate"
-    params:
+  missing_rate_sales:
+    type: "missing_rate"
+    specific:
       dataset: "sales_2024"
       column: null
 tests:
-  - id: "range"
-    params:
-      value_from_metric: "missing_rate"
-      low: 0.0
-      high: 0.2
-      inclusive: true
+  range_missing_rate:
+    type: "interval_check"
+    specific:
+      value_from_metric: "missing_rate_sales"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.2

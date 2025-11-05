@@ -660,7 +660,12 @@ def register_navigation_callbacks(app):
         alias = chosen.get('alias')
         spark_ctx = getattr(current_app, 'spark_context', None)
         if not spark_ctx:
-            return html.Div("Spark context non initialisé", className="text-danger"), True, ""
+            message = html.Div([
+                html.P("⚠️ Prévisualisation non disponible", className="text-warning mb-2"),
+                html.Small("Le contexte Spark n'est pas initialisé. Cette fonctionnalité nécessite un environnement Spark configuré.", 
+                          className="text-muted")
+            ])
+            return message, True, f"Dataset: {alias}"
         try:
             cols = spark_ctx.peek_schema(alias)
             df = spark_ctx.load(alias, cache=False)

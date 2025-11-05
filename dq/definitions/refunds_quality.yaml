@@ -3,18 +3,22 @@ label: "Refunds Quality"
 context:
   stream: "A"
   project: "P1"
-  dq_point: "raw"
+  zone: "raw"
+  dq_point: "quality_check"
 databases:
   - alias: "refunds"
 metrics:
-  - id: "missing_rate"
-    params:
+  missing_rate_refunds:
+    type: "missing_rate"
+    specific:
       dataset: "refunds"
       column: null
 tests:
-  - id: "range"
-    params:
-      value_from_metric: "missing_rate"
-      low: 0.0
-      high: 0.3
-      inclusive: true
+  range_missing_rate:
+    type: "interval_check"
+    specific:
+      value_from_metric: "missing_rate_refunds"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.3

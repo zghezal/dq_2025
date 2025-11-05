@@ -122,9 +122,8 @@ def cfg_template():
         },
         "context": {},
         "databases": [],
-        "metrics": [],
-        "tests": [],
-        "orchestration": {"order": [], "dependencies": []}
+        "metrics": {},  # Dictionnaire avec ID comme clé
+        "tests": {}     # Dictionnaire avec ID comme clé
     }
 
 
