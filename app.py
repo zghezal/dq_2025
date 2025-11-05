@@ -19,6 +19,7 @@ from src.layouts.select_stream import select_stream_page
 from src.layouts.select_project import select_project_page
 from src.layouts.select_dq_point import select_dq_point_page
 from src.layouts.builder_landing import builder_landing_page
+from src.layouts.select_quarter import select_quarter_page
 
 # Callbacks
 from src.callbacks.navigation import register_navigation_callbacks
@@ -49,6 +50,8 @@ app.layout = html.Div([
     dcc.Store(id="inventory-datasets-store", storage_type="session"),
     # Store global contenant les DQ (configurés / templates) filtrés par contexte
     dcc.Store(id="inventory-dqs-store", storage_type="session"),
+    # Store global pour le contexte d'exécution
+    dcc.Store(id="run-context-store", storage_type="session"),
     # Note: Ne pas dupliquer ici les components (dropdowns/divs) qui sont
     # définis dans les pages (ex: select_dq_point_page). Les duplications
     # d'identifiants empêchaient les callbacks d'atteindre les éléments
@@ -65,6 +68,7 @@ app.validation_layout = html.Div([
     
     # Stores globaux partagés entre toutes les pages (déclarés ici pour éviter les duplications)
     dcc.Store(id="inventory-datasets-store", storage_type="session"),
+    dcc.Store(id="run-context-store", storage_type="session"),
     
     home_page(),
     dashboard_page(),
@@ -75,13 +79,25 @@ app.validation_layout = html.Div([
         dq_inventory_page(),
         dq_runner_page(),
         drop_dq_page(),
-        select_stream_page(),
+    select_quarter_page(),
+    select_stream_page(),
         select_project_page(),
         select_dq_point_page(),
         builder_landing_page(),
         # Placeholders for pattern-matching callback IDs used in build callbacks
         html.Div(id={"role": "metric-preview"}, style={"display": "none"}),
         dcc.Dropdown(id={"role": "metric-column", "form": "metric"}, options=[], style={"display": "none"}),
+        dbc.Checklist(id={"role": "metric-general", "field": "export"}, options=[], value=[], style={"display": "none"}),
+        dcc.Store(id="interval-rules-store", storage_type="session"),
+    dbc.Checkbox(id={"role": "interval-lower-enabled"}, value=False, style={"display": "none"}),
+        dcc.Input(id={"role": "interval-lower-value"}, type="number", style={"display": "none"}),
+    dbc.Checkbox(id={"role": "interval-upper-enabled"}, value=False, style={"display": "none"}),
+        dcc.Input(id={"role": "interval-upper-value"}, type="number", style={"display": "none"}),
+        dcc.Dropdown(id={"role": "interval-rule-columns", "index": "placeholder"}, options=[], style={"display": "none"}),
+        dbc.Checkbox(id={"role": "interval-rule-lower-enabled", "index": "placeholder"}, value=False, style={"display": "none"}),
+        dcc.Input(id={"role": "interval-rule-lower-value", "index": "placeholder"}, type="number", style={"display": "none"}),
+        dbc.Checkbox(id={"role": "interval-rule-upper-enabled", "index": "placeholder"}, value=False, style={"display": "none"}),
+        dcc.Input(id={"role": "interval-rule-upper-value", "index": "placeholder"}, type="number", style={"display": "none"}),
     configs_page()
 ])
 

@@ -7,7 +7,7 @@ def select_stream_page():
     streams = get_streams_with_labels()
     options = [{"label": data["label"], "value": stream_id} for stream_id, data in streams.items()]
     return dbc.Container([
-        html.H2("Étape 1 — Choisir le Stream"),
+        html.H2("Étape 2 — Choisir le Stream"),
         html.P("Sélectionnez le stream de données que vous souhaitez gérer."),
         dcc.Dropdown(id="select-stream-dropdown", options=options, placeholder="Choisir un stream"),
         

@@ -16,7 +16,7 @@ def dashboard_page():
                 dbc.CardBody([
                     html.P("Accès pour les DQ developers : Inventory, Builder, Runner."),
                     dbc.Button("DQ Inventory", href="/dq-inventory", color="secondary", className="me-2"),
-                    dbc.Button("Builder", href="/select-stream", color="primary", className="me-2"),
+                    dbc.Button("Builder", href="/select-quarter", color="primary", className="me-2"),
                     dbc.Button("Runner", href="/dq-runner", color="info")
                 ])
             ]), md=6),

@@ -23,6 +23,7 @@ from src.layouts.dashboard import dashboard_page
 from src.layouts.check_drop_dashboard import check_drop_dashboard_page
 from src.layouts.dq_management_dashboard import dq_management_dashboard_page
 from src.layouts.builder_landing import builder_landing_page
+from src.layouts.select_quarter import select_quarter_page
 from src.config import DEBUG_UI
 
 
@@ -72,6 +73,8 @@ def register_navigation_callbacks(app):
             return check_drop_dashboard_page()
         if clean_path == "/configs":
             return configs_page()
+        if clean_path == "/select-quarter":
+            return select_quarter_page()
         if clean_path == "/select-stream":
             return select_stream_page()
         if clean_path == "/select-project":
@@ -85,6 +88,25 @@ def register_navigation_callbacks(app):
         return dbc.Container([
             dbc.Alert("Page introuvable", color="warning")
         ], fluid=True)
+
+    @app.callback(
+        Output("url", "pathname", allow_duplicate=True),
+        Output("url", "search", allow_duplicate=True),
+        Input("home-checkdrop-btn", "n_clicks"),
+        Input("home-dqeditor-btn", "n_clicks"),
+        prevent_initial_call=True
+    )
+    def home_access_navigation(n_checkdrop, n_dqeditor):
+        """Navigation explicite pour les boutons de la page d'accueil."""
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update
+        triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+        if triggered == "home-checkdrop-btn":
+            return "/check-drop-dashboard", ""
+        if triggered == "home-dqeditor-btn":
+            return "/dq-editor-dashboard", ""
+        return no_update, no_update
 
     # Inventory helpers imports
     from src.inventory import get_zones, get_datasets_for_zone
@@ -119,19 +141,32 @@ def register_navigation_callbacks(app):
         Output("url", "search", allow_duplicate=True),
         Output("inventory-datasets-store", "data", allow_duplicate=True),
         Output("inventory-dqs-store", "data", allow_duplicate=True),
+        Output("run-context-store", "data", allow_duplicate=True),
         Input("select-dq-next", "n_clicks"),
         State("select-zone-dropdown", "value"),
         State("url", "search"),
+        State("run-context-store", "data"),
         prevent_initial_call=True
     )
-    def zone_next(n, zone_value, search):
+    def zone_next(n, zone_value, search, run_ctx):
         """Navigation: Zone → Builder. Prépare stores et redirige."""
-        if not n or not zone_value:
-            return "/select-dq-point", search or "", no_update, no_update
+        if not n:
+            return "/select-dq-point", search or "", no_update, no_update, run_ctx or no_update
+        if not zone_value:
+            return "/select-dq-point", search or "", no_update, no_update, run_ctx or no_update
+
         q = urlparse.parse_qs((search or "").lstrip("?"))
         stream = q.get("stream", [None])[0]
         project = q.get("project", [None])[0]
-        params = f"?stream={stream}&project={project}&zone={zone_value}"
+        quarter = q.get("quarter", [None])[0] or (run_ctx or {}).get("quarter")
+
+        if not quarter:
+            return "/select-dq-point", search or "", no_update, no_update, run_ctx or no_update
+        if not stream or not project:
+            return "/select-dq-point", search or "", no_update, no_update, run_ctx or no_update
+
+        params_parts = [f"quarter={quarter}", f"stream={stream}", f"project={project}", f"zone={zone_value}"]
+        params = "?" + "&".join(params_parts)
 
         store_payload = {"zone": zone_value, "datasets": []}
         dqs_payload = {"dqs": []}
@@ -140,7 +175,6 @@ def register_navigation_callbacks(app):
             datasets = get_datasets_for_zone(zone_value, stream_id=stream, project_id=project) or []
             store_payload = {"zone": zone_value, "datasets": datasets}
 
-            # Register datasets in Spark if possible
             spark_ctx = getattr(current_app, 'spark_context', None)
             if spark_ctx and datasets:
                 try:
@@ -148,7 +182,6 @@ def register_navigation_callbacks(app):
                 except Exception as e:
                     print(f"[DEBUG] Erreur enregistrement Spark: {e}")
 
-            # Discover DQs from dq_params and local definitions, filtered by context
             try:
                 dq_files = list_dq_files("dq_params", stream=stream, project=project, dq_point=zone_value)
                 dqs = []
@@ -158,7 +191,6 @@ def register_navigation_callbacks(app):
                     path = f"dq_params/{fn}"
                     dqs.append({"id": fn, "label": label, "path": path, "databases": cfg.get('databases', []), "context": cfg.get('context', {})})
 
-                # local YAML definitions
                 from pathlib import Path
                 import yaml
                 defs_dir = Path(__file__).resolve().parents[2] / "dq" / "definitions"
@@ -189,7 +221,9 @@ def register_navigation_callbacks(app):
         except Exception as e:
             print(f"[DEBUG] Erreur zone_next: {e}")
 
-        return "/builder-landing", params, store_payload, dqs_payload
+        new_ctx = {"quarter": quarter, "stream": stream, "project": project, "zone": zone_value}
+
+        return "/builder-landing", params, store_payload, dqs_payload, new_ctx
 
     @app.callback(
         Output("datasets-list", "children"),
@@ -397,9 +431,10 @@ def register_navigation_callbacks(app):
     def render_builder_context(search, pathname, inventory_store):
         if pathname != "/builder-landing":
             return no_update
-        stream = project = zone = None
+        quarter = stream = project = zone = None
         if search:
             q = urlparse.parse_qs(search.lstrip('?'))
+            quarter = q.get('quarter', [None])[0]
             stream = q.get('stream', [None])[0]
             project = q.get('project', [None])[0]
             zone = q.get('zone', [None])[0]
@@ -413,17 +448,18 @@ def register_navigation_callbacks(app):
                     project = project or first.get('project')
             except Exception:
                 pass
-        if not any([stream, project, zone]):
+        if not any([quarter, stream, project, zone]):
             return html.Div("Aucun contexte fourni.", className="text-muted")
         try:
             return html.Div([
                 html.Span("Contexte : ", className="me-2 fw-bold"),
+                dbc.Badge(f"Quarter: {quarter}", color="dark", className="me-2") if quarter else None,
                 dbc.Badge(f"Stream: {stream}", color="primary", className="me-2"),
                 dbc.Badge(f"Project: {project}", color="secondary", className="me-2"),
                 dbc.Badge(f"Zone: {zone}", color="info")
             ], className="d-flex align-items-center")
         except Exception:
-            return html.Div(f"Stream: {stream} — Project: {project} — Zone: {zone}")
+            return html.Div(f"Quarter: {quarter} — Stream: {stream} — Project: {project} — Zone: {zone}")
 
     @app.callback(
         Output("inventory-datasets-store", "data", allow_duplicate=True),
@@ -668,6 +704,23 @@ def register_navigation_callbacks(app):
             return is_open
         return False
 
+    @app.callback(
+        Output("url", "pathname", allow_duplicate=True),
+        Output("url", "search", allow_duplicate=True),
+        Output("run-context-store", "data", allow_duplicate=True),
+        Output("quarter-status", "children"),
+        Input("quarter-next", "n_clicks"),
+        State("quarter-dropdown", "value"),
+        prevent_initial_call=True
+    )
+    def quarter_next(n, quarter_value):
+        if not n:
+            return no_update, no_update, no_update, no_update
+        if not quarter_value:
+            return "/select-quarter", no_update, no_update, "Sélectionne un quarter avant de continuer."
+        ctx_payload = {"quarter": quarter_value, "stream": "", "project": "", "zone": ""}
+        return "/select-stream", f"?quarter={quarter_value}", ctx_payload, ""
+
     # Minimal overview callbacks
     @app.callback(
         Output("stream-overview-container", "children"),
@@ -690,15 +743,29 @@ def register_navigation_callbacks(app):
     @app.callback(
         Output("url", "pathname"),
         Output("url", "search"),
+        Output("select-stream-status", "children"),
         Input("select-stream-next", "n_clicks"),
         State("select-stream-dropdown", "value"),
+        State("url", "search"),
         prevent_initial_call=True
     )
-    def stream_next(n, stream_value):
+    def stream_next(n, stream_value, search):
         """Handle 'Suivant' on select-stream page: go to /select-project with stream param."""
-        if not n or not stream_value:
-            return "/select-stream", ""
-        return "/select-project", f"?stream={stream_value}"
+        if not n:
+            return no_update, no_update, no_update
+        q = urlparse.parse_qs((search or "").lstrip("?"))
+        quarter = q.get("quarter", [None])[0]
+        if not quarter:
+            return "/select-stream", search or "", "Sélectionne un quarter avant de choisir un stream."
+        if not stream_value:
+            return "/select-stream", search or "", "Sélectionne un stream avant de continuer."
+        q = urlparse.parse_qs((search or "").lstrip("?"))
+        params = []
+        if quarter:
+            params.append(f"quarter={quarter}")
+        params.append(f"stream={stream_value}")
+        new_search = "?" + "&".join(params) if params else ""
+        return "/select-project", new_search, ""
 
     @app.callback(
         Output("project-overview-container", "children"),
@@ -762,7 +829,14 @@ def register_navigation_callbacks(app):
             return "/select-project", search or ""
         q = urlparse.parse_qs((search or "").lstrip("?"))
         stream = q.get("stream", [None])[0]
-        params = f"?stream={stream}&project={project_value}"
+        quarter = q.get("quarter", [None])[0]
+        params_parts = []
+        if quarter:
+            params_parts.append(f"quarter={quarter}")
+        if stream:
+            params_parts.append(f"stream={stream}")
+        params_parts.append(f"project={project_value}")
+        params = "?" + "&".join(params_parts)
         return "/select-dq-point", params
 
     @app.callback(

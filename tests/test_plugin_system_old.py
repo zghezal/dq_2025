@@ -58,13 +58,12 @@ class TestPluginDiscovery:
         """Vérifie que le système découvre les plugins."""
         plugins = discover_all_plugins(verbose=False)
         
-        # On doit avoir au moins missing_rate et aggregation_by_column
-        assert len(plugins) >= 2, f"Expected at least 2 plugins, found {len(plugins)}"
+        # On doit avoir au moins la métrique missing_rate
+        assert len(plugins) >= 1, f"Expected at least 1 plugin, found {len(plugins)}"
         
-        # Vérifier que les plugins attendus sont présents
+        # Vérifier que la métrique missing_rate est présente
         plugin_ids = list(plugins.keys())
-        assert "missing_rate" in plugin_ids, "missing_rate plugin not discovered"
-        assert "aggregation_by_column" in plugin_ids, "aggregation_by_column not discovered"
+        assert "missing_rate" in plugin_ids, "missing_rate not discovered"
     
     def test_registry_is_populated(self):
         """Vérifie que REGISTRY contient les plugins découverts."""
@@ -72,7 +71,6 @@ class TestPluginDiscovery:
         
         assert len(REGISTRY) > 0, "REGISTRY is empty"
         assert "missing_rate" in REGISTRY
-        assert "aggregation_by_column" in REGISTRY
     
     def test_plugin_has_required_attributes(self):
         """Vérifie que les plugins respectent le contrat."""

@@ -1,0 +1,11 @@
+{
+  "conditions": [
+    {
+      "column": "country",
+      "type": "S",
+      "value": "somalie",
+      "result": true
+    }
+  ],
+  "default": false
+}

@@ -22,7 +22,7 @@ def _populate_metrics_registry():
     """Remplit METRICS depuis les plugins découverts (metrics only)."""
     global METRICS
     try:
-        discovered = discover_all_plugins(verbose=False)
+        discovered = discover_all_plugins(verbose=False, force_rescan=True)
     except Exception:
         discovered = {}
 

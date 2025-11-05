@@ -13,11 +13,74 @@ def build_page():
         html.Div(id="ctx-banner"),
         html.H3("🔧 Configuration DQ Builder", className="mb-3"),
         
+        dcc.Store(id="run-context-store", storage_type="session"),
         dcc.Store(id="store_datasets", storage_type="session"),
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
         dcc.Store(id="store_edit_metric", storage_type="session"),
         # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
+        dcc.Store(id="dataset-schema-request", storage_type="memory"),
+
+        dbc.Card([
+            dbc.CardHeader("🌍 Contexte d'exécution"),
+            dbc.CardBody([
+                html.Small("Ces informations sont partagées par toutes les métriques et tous les tests", className="text-muted d-block mb-2"),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Quarter"),
+                        dcc.Input(
+                            id={"role": "run-context", "field": "quarter"},
+                            type="text",
+                            placeholder="2025Q1",
+                            className="form-control",
+                            disabled=True,
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Stream"),
+                        dcc.Input(
+                            id={"role": "run-context", "field": "stream"},
+                            type="text",
+                            placeholder="Stream",
+                            className="form-control",
+                            disabled=True,
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Project"),
+                        dcc.Input(
+                            id={"role": "run-context", "field": "project"},
+                            type="text",
+                            placeholder="Projet",
+                            className="form-control",
+                            disabled=True,
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Step in pipeline (zone)"),
+                        dcc.Input(
+                            id={"role": "run-context", "field": "zone"},
+                            type="text",
+                            placeholder="Zone",
+                            className="form-control",
+                            disabled=True,
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=3),
+                ])
+            ])
+        ], className="mb-3"),
 
         dbc.Tabs([
             # Onglet 1: Datasets
@@ -51,13 +114,13 @@ def build_page():
                             dbc.Tab(label="➕ Créer", tab_id="tab-metric-create", children=[
                                 html.Div(className="mt-3", children=[
                                     html.Div([
-                                        html.Label("Type de métrique", className="d-inline me-2"),
+                                        html.Label("Choix de la métrique", className="d-inline me-2"),
                                         dbc.Button("❓", id="open-metric-help", color="info", size="sm", className="mb-1")
                                     ]),
                                     dcc.Dropdown(
                                         id="metric-type",
                                         options=get_metric_options(),
-                                        placeholder="Choisir le type",
+                                        placeholder="Choisir la métrique",
                                         clearable=False,
                                         persistence=True,
                                         persistence_type="session"
@@ -93,7 +156,7 @@ def build_page():
                             dbc.Tab(label="➕ Créer", tab_id="tab-test-create", children=[
                                 html.Div(className="mt-3", children=[
                                     html.Div([
-                                        html.Label("Type de test", className="d-inline me-2"),
+                                        html.Label("Choix du test", className="d-inline me-2"),
                                         dbc.Button("❓", id="open-test-help", color="info", size="sm", className="mb-1")
                                     ]),
                                     dcc.Dropdown(
@@ -101,14 +164,15 @@ def build_page():
                                         options=[
                                             {"label": info.plugin_class.label, "value": pid}
                                             for pid, info in discover_all_plugins(verbose=False).items()
-                                            if info.category == "tests"
+                                            if info.category == "tests" and pid in {"test.interval_check"}
                                         ],
-                                        placeholder="Choisir le type",
+                                        placeholder="Choisir le test",
                                         clearable=False,
                                         persistence=True,
                                         persistence_type="session"
                                     ),
                                     html.Div(id="test-params", className="mt-3"),
+                                    dbc.Button("🔍 Forcer l'aperçu", id="force-test-preview", color="secondary", className="mt-3 me-2"),
                                     dbc.Button("✅ Ajouter le test", id="add-test", color="primary", className="mt-3"),
                                     html.Div(id="add-test-status", className="text-success mt-2"),
                                 ])
@@ -180,6 +244,20 @@ def build_page():
             icon="info",
             style={"position": "fixed", "top": 20, "right": 20, "zIndex": 2000}
         ),
+
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle(id="dataset-schema-modal-title")),
+                dbc.ModalBody(id="dataset-schema-modal-body"),
+                dbc.ModalFooter(
+                    dbc.Button("Fermer", id="dataset-schema-modal-close", color="secondary")
+                )
+            ],
+            id="dataset-schema-modal",
+            is_open=False,
+            size="xl"
+        ),
+
     # Hidden placeholders so pattern-matching callback ids exist for validation
     # Note: include an extra `_placeholder` key so these do NOT match callbacks that
     # expect exactly {'role':'metric-preview'} or {'role':'metric-column','form':'metric'}

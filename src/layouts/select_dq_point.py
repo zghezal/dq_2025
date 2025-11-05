@@ -5,7 +5,7 @@ import dash_bootstrap_components as dbc
 def select_dq_point_page():
     """Page de sélection de la zone (raw/trusted/sandbox) - anciennement DQ Point."""
     return dbc.Container([
-        html.H2("Étape 3 — Choisir la Zone"),
+        html.H2("Étape 4 — Choisir la Zone"),
         html.P("Sélectionnez la zone de données (ex: raw, trusted, sandbox)."),
         dcc.Dropdown(
             id="select-zone-dropdown", 

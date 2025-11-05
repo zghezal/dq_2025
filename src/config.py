@@ -1,5 +1,6 @@
 # Configuration et constantes
-
+from __future__ import annotations
+import os
 import yaml
 from pathlib import Path
 from typing import Dict, List
@@ -118,3 +119,14 @@ project = client.get_default_project()
 # Mode debug UI (contrôlé par l'env var DQ_DEBUG_UI)
 _dq_debug_env = os.getenv('DQ_DEBUG_UI', 'false').lower()
 DEBUG_UI = _dq_debug_env in ('1', 'true', 'yes', 'on')
+
+
+
+def get_default_stream() -> str:
+    return os.getenv("DQ_DEFAULT_STREAM", "")
+
+def get_default_project() -> str:
+    return os.getenv("DQ_DEFAULT_PROJECT", "")
+
+def get_default_zone() -> str:
+    return os.getenv("DQ_DEFAULT_ZONE", "")

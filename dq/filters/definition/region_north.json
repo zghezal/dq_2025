@@ -1,0 +1,11 @@
+{
+  "conditions": [
+    {
+      "column": "region",
+      "type": "S",
+      "value": "North",
+      "result": true
+    }
+  ],
+  "default": false
+}

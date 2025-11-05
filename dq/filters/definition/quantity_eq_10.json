@@ -1,0 +1,11 @@
+{
+  "conditions": [
+    {
+      "column": "quantity",
+      "type": "N",
+      "value": 10,
+      "result": true
+    }
+  ],
+  "default": false
+}

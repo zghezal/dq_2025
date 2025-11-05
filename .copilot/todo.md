@@ -1,0 +1,4 @@
+- [x] Add virtual dataset schema preview for configured metrics
+  - [x] Inspect where metrics store dataset transformations
+  - [x] Implement backend function to derive resulting schema
+  - [x] Add UI element to display resulting schema in metrics tab

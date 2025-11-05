@@ -63,6 +63,12 @@ def build_form_from_model(ParamsModel, context, prefix=""):
                     meta = m
                     break
         if meta is None:
+            extra = getattr(fld, "json_schema_extra", None)
+            if isinstance(extra, dict):
+                maybe_meta = extra.get("ui_meta")
+                if hasattr(maybe_meta, "group"):
+                    meta = maybe_meta
+        if meta is None:
             class Dummy: pass
             meta = Dummy()
             meta.group = "specific"

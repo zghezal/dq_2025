@@ -194,3 +194,35 @@ def get_zone_overview(stream_id: str, project_id: str, zone_id: str) -> List[Dic
                                     "Source": ds.get("source", {}).get("path", "")
                                 })
     return results
+
+
+def get_project_tag(stream_id: str, project_id: str) -> str:
+    """Retourne le tag configuré pour un projet (ex: ALMT_) ou None."""
+    inv = _load_inventory()
+    for s in inv.get("streams", []):
+        if s.get("id") == stream_id:
+            for p in s.get("projects", []):
+                if p.get("id") == project_id:
+                    tag = p.get("tag")
+                    if tag:
+                        return str(tag).upper().rstrip("_") + "_"
+                    return str(project_id).upper().rstrip("_") + "_"
+    return ""
+
+
+def get_zone_tag(stream_id: str, project_id: str, zone_id: str) -> str:
+    """Retourne le tag configuré pour une zone (ex: MACH_) ou None."""
+    inv = _load_inventory()
+    for s in inv.get("streams", []):
+        if stream_id and s.get("id") != stream_id:
+            continue
+        for p in s.get("projects", []):
+            if project_id and p.get("id") != project_id:
+                continue
+            for z in p.get("zones", []):
+                if z.get("id") == zone_id:
+                    tag = z.get("tag")
+                    if tag:
+                        return str(tag).upper().rstrip("_") + "_"
+                    return str(zone_id).upper().rstrip("_") + "_"
+    return ""

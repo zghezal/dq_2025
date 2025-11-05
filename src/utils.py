@@ -355,17 +355,32 @@ def sanitize_metric(m: dict) -> dict:
         return {}
 
     # Ne plus restreindre les types statiquement : on accepte tout type fourni
+    specific = m.get("specific") or {}
     out = {
         "id": m.get("id") or None,
         "type": m.get("type") or "unknown",
         # Pour la compatibilité avec le séquenceur, on fournit les paramètres sous la clé 'params'
         "params": {
-            "dataset": m.get("database") or m.get("dataset") or "",
-            "column": m.get("column") or "",
+            "dataset": m.get("database") or m.get("dataset") or specific.get("dataset") or "",
+            "column": None,
             "where": m.get("where") or "",
             "expr": m.get("expr") or "",
         }
     }
+
+    column_value = m.get("column") or specific.get("column") or specific.get("columns") or ""
+    if isinstance(column_value, list):
+        out["params"]["column"] = [c for c in column_value if c not in (None, "")]
+    elif column_value not in (None, ""):
+        out["params"]["column"] = column_value
+    else:
+        out["params"]["column"] = ""
+    specific = m.get("specific")
+    if specific:
+        out["specific"] = specific
+    for key in ["nature", "identification", "general", "condition", "export", "database", "column", "where", "expr", "columns", "database_filter"]:
+        if key in m and m[key] not in (None, ""):
+            out[key] = m[key]
     return out
 
 
@@ -379,19 +394,40 @@ def sanitize_test(t: dict) -> dict:
         return {}
 
     # Accept any provided test type (discovery/registry will validate later)
+    # Prefer general block for operational flags
+    general_block = t.get("general") or {}
+    severity_val = general_block.get("criticality") or t.get("severity") or "medium"
+    sample_flag = bool(general_block.get("sample_on_fail") or t.get("sample_on_fail") or False)
+
     out = {
         "id": t.get("id") or None,
         "type": t.get("type") or "unknown",
-        "severity": t.get("severity") or "medium",
-        "sample_on_fail": bool(t.get("sample_on_fail") or t.get("sample_on_fail") == True),
+        "severity": severity_val,
+        "sample_on_fail": sample_flag,
     }
 
-    # Source: metric or database/column
-    if t.get("metric"):
-        out["metric"] = t.get("metric")
+    # Preserve structured blocks if present
+    for key in ["nature", "identification", "general"]:
+        if key in t and t[key] not in (None, ""):
+            out[key] = t[key]
+
+    # Prefer 'specific' block for source details; fallback to legacy root keys for compatibility
+    specific = t.get("specific")
+    if isinstance(specific, dict) and specific:
+        out["specific"] = specific
     else:
-        out["database"] = t.get("database") or ""
-        out["column"] = t.get("column") or ""
+        # Source: metric or database/column (legacy)
+        if t.get("metric"):
+            out["metric"] = t.get("metric")
+        else:
+            out["database"] = t.get("database") or ""
+            out["column"] = t.get("column") or ""
+        if t.get("columns"):
+            cols = t.get("columns")
+            if isinstance(cols, (list, tuple, set)):
+                out["columns"] = [c for c in cols if c]
+            else:
+                out["columns"] = cols
 
     # Threshold normalization
     thr = t.get("threshold")
@@ -429,6 +465,13 @@ def sanitize_test(t: dict) -> dict:
     # Foreign key ref
     if t.get("ref"):
         out["ref"] = t.get("ref")
+
+    specific = t.get("specific")
+    if isinstance(specific, dict):
+        out["specific"] = specific
+    mode = t.get("mode")
+    if mode:
+        out["mode"] = mode
 
     return out
 

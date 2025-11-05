@@ -5,7 +5,7 @@ from src.config import STREAMS
 
 def select_project_page():
     return dbc.Container([
-        html.H2("Étape 2 — Choisir le Project"),
+        html.H2("Étape 3 — Choisir le Project"),
         html.P("Le projet sera filtré en fonction du Stream choisi."),
         dcc.Dropdown(id="select-project-dropdown", options=[], placeholder="Choisir un project"),
         

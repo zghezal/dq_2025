@@ -23,9 +23,13 @@ def home_page():
                     dbc.CardBody([
                         html.H4("Check&Drop", className="text-center mb-3"),
                         html.P("Accès pour déposer des datasets et lancer des contrôles DQ", className="text-center text-muted mb-4"),
-                        html.Div([
-                            dbc.Button("Accéder", href="/check-drop-dashboard", color="warning", size="lg", className="w-100")
-                        ])
+                        dbc.Button(
+                            "Accéder",
+                            id="home-checkdrop-btn",
+                            color="warning",
+                            size="lg",
+                            className="w-100"
+                        )
                     ])
                 ], className="shadow"),
                 md={"size": 4, "offset": 2}
@@ -35,9 +39,13 @@ def home_page():
                     dbc.CardBody([
                         html.H4("DQ Editor", className="text-center mb-3"),
                         html.P("Accès complet pour les DQ developers : Inventory, Builder, Runner", className="text-center text-muted mb-4"),
-                        html.Div([
-                            dbc.Button("Accéder", href="/dq-editor-dashboard", color="primary", size="lg", className="w-100")
-                        ])
+                        dbc.Button(
+                            "Accéder",
+                            id="home-dqeditor-btn",
+                            color="primary",
+                            size="lg",
+                            className="w-100"
+                        )
                     ])
                 ], className="shadow"),
                 md=4

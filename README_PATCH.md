@@ -3,7 +3,6 @@
 Ce paquet **n'écrase aucun fichier existant**. Il ajoute :
 - `src/core/ui_meta.py`
 - `src/plugins/base_models.py`
-- `src/plugins/metrics/agg_metric.py` (nouvelle métrique d'exemple)
 - `src/plugins/tests/range2_test.py` (nouvelle version auto-UI — l'ancienne reste intacte)
 - `src/ui/form_builder.py` (générateur de formulaires)
 - `tests/test_plugin_contracts.py` (contract tests)

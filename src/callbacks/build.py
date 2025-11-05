@@ -1,12 +1,15 @@
 # Callbacks de la page Build (wizard de création DQ)
 
 import json
+import os
 import urllib.parse as urlparse
 from datetime import datetime
-from dash import html, dcc, Input, Output, State, ALL, no_update
+from dash import html, dcc, Input, Output, State, ALL, MATCH, no_update, callback_context
+from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import yaml
 import re
+import copy
 
 try:
     import dataiku
@@ -22,17 +25,114 @@ from src.utils import (
     first,
     sanitize_metrics,
     sanitize_tests,
+    sanitize_metric,
     validate_cfg
 )
 from src.metrics_registry import get_metric_options, get_metric_meta
+from src.inventory import get_project_tag, get_zone_tag
+from dq.filters.filter_loader import list_filters, DEFAULT_ROOT
 from src.dq_runner import run_dq_config
 import pandas as pd
 from dash import dash_table
 from src.plugins.discovery import discover_all_plugins, ensure_plugins_discovered
+from src.plugins.base import REGISTRY
 from src.context.spark_context import SparkDQContext
 from src.plugins.sequencer import build_execution_plan
 from src.plugins.executor import Executor, ExecutionContext
 import traceback
+from uuid import uuid4
+
+
+def _resolve_context(search, inventory_store):
+    """Retourne (stream, project, zone) en combinant URL et store inventory."""
+    q = parse_query(search or "") if search else {}
+    stream = q.get("stream")
+    project = q.get("project")
+    zone = q.get("zone")
+
+    inv_data = {} if inventory_store is no_update else (inventory_store or {})
+    if (not stream or not project or not zone) and isinstance(inv_data, dict):
+        datasets = inv_data.get("datasets") or []
+        for item in datasets:
+            if not isinstance(item, dict):
+                continue
+            stream = stream or item.get("stream")
+            project = project or item.get("project")
+            zone = zone or item.get("zone")
+            if stream and project and zone:
+                break
+    if not zone and isinstance(inv_data, dict):
+        zone = inv_data.get("zone") or zone
+    return stream, project, zone
+
+
+def build_id_prefix_from_context(search, inventory_store, kind: str):
+    """Construit un préfixe d'ID à partir du contexte URL/inventory.
+
+    kind: 'metric' or 'test'
+    Retourne une chaîne comme 'ALMT_MACH_METRIC_'
+    """
+    stream, project, zone = _resolve_context(search, inventory_store)
+    proj_tag = get_project_tag(stream or "", project or "") if project else (str(project).upper() + "_")
+    zone_tag = get_zone_tag(stream or "", project or "", zone or "") if zone else (str(zone).upper() + "_")
+    kind_tag = "METRIC_" if kind == "metric" else "TEST_"
+    # ensure tags end with underscore
+    if proj_tag and not proj_tag.endswith("_"):
+        proj_tag = proj_tag + "_"
+    if zone_tag and not zone_tag.endswith("_"):
+        zone_tag = zone_tag + "_"
+    return f"{proj_tag}{zone_tag}{kind_tag}".replace("__", "_")
+
+
+def _resolve_filter_path(name, stream, project, zone):
+    """Retourne le chemin JSON du filtre en respectant l'ordre de recherche."""
+    candidates = []
+    if stream and project and zone:
+        candidates.append(os.path.join(DEFAULT_ROOT, stream, project, zone, f"{name}.json"))
+    candidates.append(os.path.join(DEFAULT_ROOT, "definition", f"{name}.json"))
+    candidates.append(os.path.join(DEFAULT_ROOT, f"{name}.json"))
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _get_metric_output_columns(metric_id, metrics_store):
+    """Retourne les colonnes produites par la métrique sélectionnée."""
+    if not metric_id or not metrics_store:
+        return []
+    metric_def = None
+    for item in metrics_store or []:
+        if item and item.get("id") == metric_id:
+            metric_def = copy.deepcopy(item)
+            break
+    if not metric_def:
+        return []
+    metric_type = metric_def.get("type")
+    if not metric_type:
+        return []
+    try:
+        ensure_plugins_discovered()
+        plugins = discover_all_plugins(verbose=False)
+        info = plugins.get(metric_type)
+        plugin_class = getattr(info, "plugin_class", None) if info else None
+        if plugin_class is None:
+            raise ValueError("Plugin introuvable")
+        schema = plugin_class.output_schema(metric_def)
+        if schema and getattr(schema, "columns", None):
+            return [c.name for c in schema.columns if getattr(c, "name", None)]
+    except Exception:
+        pass
+    specific = metric_def.get("specific") or {}
+    # Fallback sur la configuration si aucun schéma disponible
+    column_field = specific.get("column")
+    if not column_field:
+        column_field = specific.get("columns")
+    if isinstance(column_field, list):
+        return [c for c in column_field if c]
+    if isinstance(column_field, str) and column_field:
+        return [column_field]
+    return []
 
 
 def generate_metric_description(metric):
@@ -40,28 +140,197 @@ def generate_metric_description(metric):
     parts = []
     
     # Type et database
-    mtype = metric.get("type", "")
-    db = metric.get("database", "")
+    specific = metric.get("specific") or {}
+    db = metric.get("database") or specific.get("dataset") or ""
     if db:
         parts.append(f"Base: {db}")
     
     # Colonnes
-    col = metric.get("column", [])
-    if isinstance(col, list) and col:
-        parts.append(f"Colonnes: {', '.join(col)}")
-    elif col:
-        parts.append(f"Colonne: {col}")
+    col_candidate = metric.get("column")
+    if not col_candidate:
+        col_candidate = specific.get("column") or specific.get("columns") or []
+    if isinstance(col_candidate, list) and col_candidate:
+        parts.append(f"Colonnes: {', '.join(col_candidate)}")
+    elif col_candidate:
+        parts.append(f"Colonne: {col_candidate}")
     
-    # Filtre WHERE
+    # Filtre WHERE / spécifique
     where = metric.get("where", "")
+    filter_name = specific.get("filter")
     if where:
         parts.append(f"Filtre: {where}")
+    elif filter_name:
+        parts.append(f"Filtre: {filter_name}")
     
     # Expression
     expr = metric.get("expr", "")
     if expr:
         parts.append(f"Expr: {expr}")
-    
+
+    # Informations générales
+    general = metric.get("general") or {}
+    if metric.get("export") or general.get("export"):
+        parts.append("Exportée")
+
+    return " • ".join(parts) if parts else "-"
+
+
+def _cast_optional_number(value):
+    """Convertit une valeur en float si possible, sinon laisse None ou la valeur d'origine."""
+    if value in (None, "", [], {}):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
+def _parse_interval_rules(raw_value):
+    """Parse la configuration JSON des bornes spécifiques à l'Interval Check."""
+    if raw_value in (None, "", []):
+        return []
+
+    if isinstance(raw_value, list):
+        parsed = raw_value
+    elif isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception as exc:
+            raise ValueError(f"JSON invalide: {exc}") from exc
+    else:
+        raise ValueError("Format non supporté pour column_rules (attendu JSON ou liste)")
+
+    if not isinstance(parsed, list):
+        raise ValueError("Le JSON doit représenter une liste d'objets")
+
+    rules = []
+    for idx, item in enumerate(parsed, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Entrée #{idx} doit être un objet")
+
+        columns = item.get("columns")
+        if isinstance(columns, str):
+            columns = [c.strip() for c in columns.split(",") if c.strip()]
+        elif isinstance(columns, (list, tuple, set)):
+            columns = [str(c).strip() for c in columns if c not in (None, "")]
+        else:
+            columns = []
+        if not columns:
+            raise ValueError(f"Entrée #{idx} : 'columns' est vide")
+
+        lower = item.get("lower")
+        if lower is None and "lower_value" in item:
+            lower = item.get("lower_value")
+        upper = item.get("upper")
+        if upper is None and "upper_value" in item:
+            upper = item.get("upper_value")
+
+        rules.append({
+            "columns": columns,
+            "lower": _cast_optional_number(lower),
+            "upper": _cast_optional_number(upper)
+        })
+
+    return rules
+
+
+def _build_params_for_virtual_schema(metric: dict) -> dict:
+    """Prépare les paramètres à fournir au plugin pour calculer le schéma virtuel."""
+    sanitized = sanitize_metric(metric or {})
+    params: dict = {}
+
+    # Point de départ : params déjà présents (bruts ou sanitisés)
+    for source in (metric.get("params"), sanitized.get("params")):
+        if isinstance(source, dict):
+            for key, value in source.items():
+                if value in (None, "", [], {}):
+                    continue
+                params[key] = value
+
+    # Bloc specific (nécessaire pour certains plugins comme missing_rate)
+    specific_block = metric.get("specific") or sanitized.get("specific")
+    if isinstance(specific_block, dict) and specific_block:
+        params.setdefault("specific", specific_block)
+
+    # Colonnes multiples (optionnelles)
+    columns_value = metric.get("columns") or sanitized.get("columns")
+    if columns_value not in (None, "", [], {}):
+        params.setdefault("columns", columns_value)
+
+    # Filtre dataset associé (legacy)
+    database_filter = metric.get("database_filter") or sanitized.get("database_filter")
+    if database_filter not in (None, "", [], {}):
+        params.setdefault("database_filter", database_filter)
+
+    skip_keys = {
+        "id", "type", "params", "general", "nature", "identification",
+        "specific", "columns", "database", "column", "where", "expr",
+        "condition", "export", "database_filter"
+    }
+
+    for key, value in (metric or {}).items():
+        if key in skip_keys:
+            continue
+        if value in (None, "", [], {}):
+            continue
+        params.setdefault(key, value)
+
+    return params
+
+
+def generate_test_description(test):
+    """Construit une description lisible d'un test pour l'aperçu tableau."""
+    if not isinstance(test, dict):
+        return "-"
+
+    parts: list[str] = []
+    general = test.get("general") or {}
+    severity = general.get("criticality") or test.get("severity")
+    if severity:
+        parts.append(f"Sévérité: {severity}")
+
+    action = general.get("on_fail") if isinstance(general, dict) else None
+    if action:
+        parts.append(f"Action: {action}")
+
+    spec = test.get("specific") or {}
+    mode = spec.get("target_mode") or test.get("mode")
+    if mode:
+        parts.append(f"Mode: {mode}")
+
+    if mode == "metric_value":
+        metric_id = spec.get("metric_id") or test.get("metric")
+        if metric_id:
+            parts.append(f"Métrique: {metric_id}")
+    else:
+        database = spec.get("database") or test.get("database")
+        if database:
+            parts.append(f"Base: {database}")
+        columns = spec.get("columns") or test.get("columns")
+        if columns:
+            if isinstance(columns, (list, tuple, set)):
+                cols = ", ".join(str(c) for c in columns if c)
+            else:
+                cols = str(columns)
+            if cols:
+                parts.append(f"Colonnes: {cols}")
+
+    lower_enabled = spec.get("lower_enabled")
+    upper_enabled = spec.get("upper_enabled")
+    lower_val = spec.get("lower_value") if lower_enabled else None
+    upper_val = spec.get("upper_value") if upper_enabled else None
+    if lower_val is not None or upper_val is not None:
+        lower_display = lower_val if lower_val is not None else "-∞"
+        upper_display = upper_val if upper_val is not None else "+∞"
+        parts.append(f"Intervalle: [{lower_display}, {upper_display}]")
+
+    pattern = test.get("pattern")
+    if pattern:
+        parts.append(f"Pattern: {pattern}")
+
     return " • ".join(parts) if parts else "-"
 
 
@@ -69,6 +338,46 @@ def register_build_callbacks(app):
     """Enregistre tous les callbacks de la page Build"""
     
     # ===== Contexte et Datasets =====
+
+    @app.callback(
+        Output("run-context-store", "data"),
+        Output({"role": "run-context", "field": "quarter"}, "value"),
+        Output({"role": "run-context", "field": "stream"}, "value"),
+        Output({"role": "run-context", "field": "project"}, "value"),
+        Output({"role": "run-context", "field": "zone"}, "value"),
+        Input("url", "search"),
+        State("run-context-store", "data"),
+        prevent_initial_call=False
+    )
+    def sync_run_context_from_url(search, current):
+        data = dict(current or {})
+        for key in ["quarter", "stream", "project", "zone"]:
+            data.setdefault(key, "")
+        q = parse_query(search) if search else {}
+        # Pré-remplir stream/project/zone depuis l'URL si absents
+        for key in ["stream", "project", "zone"]:
+            if q.get(key) and not data.get(key):
+                data[key] = q.get(key)
+        return (
+            data,
+            data.get("quarter", ""),
+            data.get("stream", ""),
+            data.get("project", ""),
+            data.get("zone", ""),
+        )
+
+    @app.callback(
+        Output("run-context-store", "data", allow_duplicate=True),
+        Input({"role": "run-context", "field": ALL}, "value"),
+        State("run-context-store", "data"),
+        prevent_initial_call=True
+    )
+    def persist_run_context(input_values, current):
+        data = dict(current or {})
+        fields = ["quarter", "stream", "project", "zone"]
+        for field, value in zip(fields, input_values or []):
+            data[field] = value or ""
+        return data
     
     @app.callback(
         Output("ctx-banner", "children"),
@@ -264,7 +573,20 @@ def register_build_callbacks(app):
         rows = []
         for ds in selected:
             rows.append(dbc.Row([
-                dbc.Col(html.Div(ds), md=6),
+                dbc.Col(
+                    html.Div([
+                        html.Span(ds, className="me-2"),
+                        dbc.Button(
+                            "👁️ Schéma",
+                            id={"role": "dataset-preview", "ds": ds},
+                            color="info",
+                            size="sm",
+                            outline=True,
+                            className="py-0"
+                        )
+                    ], className="d-flex align-items-center"),
+                    md=5
+                ),
                 dbc.Col(dcc.Input(
                     id={"role": "alias-input", "ds": ds},
                     type="text",
@@ -273,7 +595,7 @@ def register_build_callbacks(app):
                     persistence=True,
                     persistence_type="session",
                     autoComplete="off"
-                ), md=6)
+                ), md=7)
             ], className="py-1 border-bottom"))
         return dbc.Container(rows, fluid=True)
 
@@ -299,91 +621,486 @@ def register_build_callbacks(app):
         data = [{"alias": alias_map.get(ds, ds.lower()), "dataset": ds} for ds in selected]
         return f"{len(data)} dataset(s) enregistrés.", data
 
+    # === Aperçu Schéma (Builder) ===
+    @app.callback(
+        Output("dataset-schema-modal-body", "children"),
+        Output("dataset-schema-modal", "is_open", allow_duplicate=True),
+        Output("dataset-schema-modal-title", "children"),
+        Input({"role": "dataset-preview", "ds": ALL}, "n_clicks"),
+        Input({"role": "metric-db-preview"}, "n_clicks"),
+        State({"role": "metric-db"}, "value"),
+        State("store_datasets", "data"),
+        prevent_initial_call=True
+    )
+    def open_schema_modal(dataset_clicks, metric_click, selected_alias, store_datasets):
+        """Ouvre le modal de schéma depuis l'alias mapper ou le formulaire métrique."""
+        from flask import current_app
+        ctx = callback_context
+        triggered = getattr(ctx, "triggered_id", None)
+        if not triggered:
+            # Fallback for older Dash versions
+            if not ctx.triggered:
+                return no_update, no_update, no_update
+            import json as _json
+            try:
+                triggered = _json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
+            except Exception:
+                triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        alias = None
+        if isinstance(triggered, dict) and triggered.get("role") == "dataset-preview":
+            alias = triggered.get("ds")
+        elif isinstance(triggered, dict) and triggered.get("role") == "metric-db-preview":
+            alias = selected_alias
+        else:
+            return no_update, no_update, no_update
+
+        original_label = alias
+
+        if not alias:
+            return html.Div("Aucun dataset sélectionné.", className="text-muted"), True, "Erreur"
+
+        # Resolve alias vs dataset name mapping using store
+        resolved = None
+        dataset_name = None
+        if store_datasets and isinstance(store_datasets, list):
+            for item in store_datasets:
+                if not isinstance(item, dict):
+                    continue
+                store_alias = item.get("alias")
+                store_dataset = item.get("dataset")
+                if alias == store_alias or alias == store_dataset:
+                    resolved = store_alias or alias
+                    dataset_name = store_dataset or alias
+                    break
+
+        alias = resolved or alias
+
+        spark_ctx = getattr(current_app, 'spark_context', None)
+        if not spark_ctx:
+            return html.Div("Spark context non initialisé", className="text-danger"), True, "Erreur"
+
+        try:
+            catalog = getattr(spark_ctx, "catalog", {})
+            catalog_source = catalog.get(alias)
+            if catalog_source is None and dataset_name:
+                catalog_source = catalog.get(dataset_name)
+
+            # Fallbacks: tester différentes variantes du nom pour retrouver la source
+            candidates_for_source = []
+            if alias:
+                candidates_for_source.append(alias)
+            if dataset_name:
+                candidates_for_source.append(dataset_name)
+            if dataset_name and "." in dataset_name:
+                base_name = dataset_name.rsplit(".", 1)[0]
+                candidates_for_source.append(base_name)
+
+            resolved_source = catalog_source
+            for candidate in candidates_for_source:
+                if resolved_source is None:
+                    resolved_source = catalog.get(candidate)
+
+            if isinstance(resolved_source, pd.DataFrame):
+                source_desc = "Source : Pandas DataFrame (en mémoire)"
+            elif isinstance(resolved_source, str):
+                if resolved_source.endswith('.csv'):
+                    source_desc = f"Source : Fichier CSV ({resolved_source})"
+                elif resolved_source.endswith('.parquet'):
+                    source_desc = f"Source : Fichier Parquet ({resolved_source})"
+                else:
+                    source_desc = f"Source : Table SQL/Spark ({resolved_source})"
+            elif resolved_source is None:
+                if dataset_name:
+                    source_desc = f"Source : inconnue (alias enregistré: {alias}, dataset: {dataset_name})"
+                else:
+                    source_desc = "Source : inconnue (non enregistrée dans le catalog)"
+            else:
+                source_desc = f"Source : {type(resolved_source).__name__}"
+
+            schema_rows = []
+            schema_error = None
+            sample_card = html.Div()
+            df = None
+            load_error = None
+
+            load_candidates = []
+            if alias:
+                load_candidates.append(alias)
+            if dataset_name and dataset_name not in load_candidates:
+                load_candidates.append(dataset_name)
+            if dataset_name and "." in dataset_name:
+                base_name = dataset_name.rsplit(".", 1)[0]
+                if base_name not in load_candidates:
+                    load_candidates.append(base_name)
+
+            load_errors = []
+            for candidate in load_candidates:
+                try:
+                    df = spark_ctx.load(candidate, cache=False)
+                    alias = candidate  # mémorise l'alias qui fonctionne
+                    break
+                except Exception as load_exc:
+                    load_errors.append(str(load_exc))
+
+            if df is None and load_errors:
+                load_error = "; ".join(load_errors)
+
+            if df is not None:
+                schema_rows = [
+                    {"Colonne": field.name, "Type": field.dataType.simpleString()}
+                    for field in df.schema.fields
+                ]
+                try:
+                    sample_pdf = df.limit(10).toPandas()
+                    table = dash_table.DataTable(
+                        data=sample_pdf.to_dict(orient='records'),
+                        columns=[{"name": c, "id": c} for c in sample_pdf.columns],
+                        page_size=5,
+                        style_table={'overflowX': 'auto'},
+                        style_cell={'textAlign': 'left'}
+                    )
+                    sample_card = html.Div([html.H6("Aperçu (10 premières lignes)", className="mt-2"), table])
+                except Exception as sample_exc:
+                    sample_card = html.Div(
+                        f"Aucun aperçu disponible ({sample_exc}).",
+                        className="text-muted small"
+                    )
+            else:
+                try:
+                    cols = None
+                    peek_candidates = load_candidates or [alias]
+                    for candidate in peek_candidates:
+                        try:
+                            cols = spark_ctx.peek_schema(candidate)
+                            alias = candidate
+                            break
+                        except Exception:
+                            continue
+                    if cols is None:
+                        raise ValueError(load_error or "Schéma introuvable")
+                    schema_rows = [{"Colonne": col, "Type": "?"} for col in cols]
+                except Exception as schema_exc:
+                    schema_error = schema_exc
+
+            if not schema_rows:
+                schema_section = html.Div(
+                    f"Impossible de récupérer le schéma ({schema_error or load_error}).",
+                    className="text-danger"
+                )
+            else:
+                schema_section = dash_table.DataTable(
+                    data=schema_rows,
+                    columns=[
+                        {"name": "Colonne", "id": "Colonne"},
+                        {"name": "Type", "id": "Type"}
+                    ],
+                    style_table={'overflowX': 'auto'},
+                    style_cell={'textAlign': 'left', 'padding': '6px'},
+                    page_size=20
+                )
+
+            card = html.Div([
+                html.Div(source_desc, className="text-muted mb-2"),
+                html.H6("Schéma", className="mt-1"),
+                schema_section,
+                sample_card
+            ])
+            title_label = original_label or alias
+            if dataset_name and dataset_name != title_label:
+                title_label = f"{title_label} ({dataset_name})"
+            title = f"Prévisualisation — {title_label}"
+            return card, True, title
+        except Exception as e:
+            err = html.Div(f"Erreur lors de la lecture du dataset: {e}", className="text-danger")
+            return err, True, "Erreur"
+
+    @app.callback(
+        Output("dataset-schema-modal", "is_open", allow_duplicate=True),
+        Input("dataset-schema-modal-close", "n_clicks"),
+        State("dataset-schema-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def close_schema_modal(n, is_open):
+        if not n:
+            return is_open
+        return False
+
     # ===== Métriques =====
     
     @app.callback(
         Output("metric-params", "children"),
         Input("metric-type", "value"),
-        State("store_datasets", "data")
+        State("store_datasets", "data"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
+        State("store_metrics", "data"),
+        State("run-context-store", "data")
     )
-    def render_metric_form(metric_type, ds_data):
+    def render_metric_form(metric_type, ds_data, search, inventory_store, stored_metrics, run_context_data):
         """Affiche le formulaire de création de métrique selon le type avec groupes visuels"""
         if not metric_type:
             return dbc.Alert("Choisis un type de métrique.", color="light")
+        quarter_value = (run_context_data or {}).get("quarter")
+        if not quarter_value:
+            return dbc.Alert("Sélectionne d'abord un quarter dans le contexte avant de configurer une métrique.", color="warning")
         ds_aliases = [d["alias"] for d in (ds_data or [])]
         # Si pas de datasets dans le store, on continue quand même (auto-chargement en cours)
 
-    # Groupe 1: Identification
-        id_card = dbc.Card([
-            dbc.CardHeader("📝 Identification"),
+        stream_ctx, project_ctx, zone_ctx = _resolve_context(search, inventory_store)
+
+        available_filters = []
+        filters_error = None
+        if metric_type == "missing_rate":
+            try:
+                available_filters = list_filters(
+                    stream=stream_ctx,
+                    project=project_ctx,
+                    zone=zone_ctx,
+                )
+            except Exception as exc:
+                filters_error = str(exc)
+
+        filters_context_label = None
+        if stream_ctx or project_ctx or zone_ctx:
+            filters_context_label = "/".join([
+                stream_ctx or "?",
+                project_ctx or "?",
+                zone_ctx or "?",
+            ])
+
+        meta = get_metric_meta(metric_type)
+        metric_label = meta.get("name") if meta else ""
+        metric_description = meta.get("description") if meta else ""
+
+        # build id prefix and propose a number
+        prefix = build_id_prefix_from_context(search, inventory_store, "metric")
+        proposed_num = 1
+        try:
+            existing = stored_metrics or []
+            pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+            nums = [int(m.group(1)) for m in (pattern.match(x.get("id" or "") or "") for x in existing) if m]
+            if nums:
+                proposed_num = max(nums) + 1
+        except Exception:
+            proposed_num = 1
+
+        nature_card = dbc.Card([
+            dbc.CardHeader("📘 Nature de la métrique"),
             dbc.CardBody([
                 dbc.Row([
                     dbc.Col([
-                        html.Label("ID de la métrique"),
+                        html.Label("Choix de la métrique"),
+                        dcc.Input(
+                            id={"role": "metric-nature", "field": "name"},
+                            type="text",
+                            value=metric_label,
+                            placeholder="Sélectionné automatiquement",
+                            className="form-control",
+                            disabled=True,
+                            style={"backgroundColor": "#f8f9fa"},
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=6),
+                    dbc.Col([
+                        html.Label("Commentaires préliminaires"),
+                        dcc.Textarea(
+                            id={"role": "metric-nature", "field": "comments"},
+                            placeholder="Hypothèses, prérequis, périmètre…",
+                            className="form-control",
+                            style={"minHeight": "90px"},
+                            persistence=True,
+                            persistence_type="session"
+                        )
+                    ], md=6)
+                ]),
+                html.Label("Description", className="mt-3"),
+                dcc.Textarea(
+                    id={"role": "metric-nature", "field": "description"},
+                    value=metric_description or "",
+                    placeholder="Explique l'objectif de la métrique",
+                    className="form-control",
+                    style={"minHeight": "100px"},
+                    persistence=True,
+                    persistence_type="session"
+                )
+            ])
+        ], className="mb-3")
+
+        identification_card = dbc.Card([
+            dbc.CardHeader("🪪 Identification de la métrique"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Quarter (contexte)"),
+                        dcc.Input(
+                            id={"role": "metric-id-quarter"},
+                            type="text",
+                            value=quarter_value,
+                            disabled=True,
+                            className="form-control",
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=4)
+                ], className="mb-3"),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Préfixe"),
+                        dcc.Input(
+                            id={"role": "metric-id-prefix"},
+                            type="text",
+                            value=prefix,
+                            disabled=True,
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=6),
+                    dbc.Col([
+                        html.Label("Numéro"),
                         dcc.Input(
                             id={"role": "metric-id"},
                             type="number",
                             value=None,
-                            placeholder="Entrez un numéro (ex: 1 pour M-001) ou laissez vide",
+                            placeholder=f"Proposé: {proposed_num}",
                             style={"width": "100%"},
                             persistence=True,
                             persistence_type="session",
                             min=1
                         ),
-                        html.Small("Saisis seulement le numéro. Préfixe 'M-' sera ajouté automatiquement.", className="text-muted")
-                    ], md=6),
-                    dbc.Col([
-                        html.Label("Exporter la métrique"),
-                        dbc.Checklist(
-                            id={"role": "metric-export"},
-                            options=[{"label": " Oui, exporter cette métrique", "value": "export"}],
-                            value=["export"],
-                            persistence=True,
-                            persistence_type="session",
-                            className="mt-2"
-                        ),
-                        html.Small("Si cochée, la métrique sera incluse dans les exports", className="text-muted")
+                        html.Small(
+                            "Saisis seulement le numéro. Le préfixe est verrouillé.",
+                            className="text-muted"
+                        )
                     ], md=6)
                 ])
+            ])
+        ], className="mb-3")
+
+        general_card = dbc.Card([
+            dbc.CardHeader("🧩 Paramétrage général"),
+            dbc.CardBody([
+                html.Label("Exporter la métrique"),
+                dbc.Checklist(
+                    id={"role": "metric-general", "field": "export"},
+                    options=[{"label": " Oui, inclure cette métrique dans les exports", "value": "export"}],
+                    value=["export"],
+                    persistence=True,
+                    persistence_type="session",
+                    className="mt-2"
+                ),
+                html.Small("Décoche si la métrique doit rester interne", className="text-muted")
             ])
         ], className="mb-3")
 
         # Groupe 2: Sélection Dataset & Filtre
-        meta = get_metric_meta(metric_type)
         db_visible = meta.get("requires_database", True)
 
-        dataset_card = dbc.Card([
-            dbc.CardHeader("📊 Sélection Dataset & Filtre"),
+        dataset_columns = [
+            dbc.Col([
+                html.Label("Dataset (alias)"),
+                html.Div([
+                    dcc.Dropdown(
+                        id={"role": "metric-db"},
+                        options=[{"label": a, "value": a} for a in ds_aliases],
+                        value=ds_aliases[0] if ds_aliases else None,
+                        clearable=False,
+                        persistence=True,
+                        persistence_type="session",
+                        style={"flex": 1}
+                    ),
+                    dbc.Button(
+                        "👁️ Schéma",
+                        id={"role": "metric-db-preview"},
+                        color="info",
+                        outline=True,
+                        size="sm",
+                        className="ms-2",
+                        disabled=not bool(ds_aliases)
+                    )
+                ], className="d-flex align-items-center", style={"display": "flex" if db_visible else "none"})
+            ], md=6, style={"display": "block" if db_visible else "none"})
+        ]
+        if metric_type == "missing_rate":
+            filter_controls = [html.Label("Filtre JSON (banque)")]
+            if available_filters:
+                filter_controls.append(dcc.Dropdown(
+                    id={"role": "missing-rate-filter", "name": "missing_rate"},
+                    options=[{"label": f"{name}.json", "value": name} for name in available_filters],
+                    placeholder="Sélectionne un filtre JSON",
+                    clearable=True,
+                    persistence=True,
+                    persistence_type="session",
+                ))
+                helper = f"{len(available_filters)} filtre(s) disponibles"
+                if filters_context_label:
+                    helper += f" pour {filters_context_label}"
+                filter_controls.append(html.Small(helper, className="text-muted d-block mb-2"))
+            else:
+                msg = "Aucun filtre détecté pour le contexte courant."
+                if filters_context_label:
+                    msg += f" ({filters_context_label})"
+                filter_controls.append(dbc.Alert(msg, color="warning", className="mb-2"))
+                if filters_error:
+                    filter_controls.append(dbc.Alert(
+                        f"Erreur lors du chargement des filtres : {filters_error}",
+                        color="danger",
+                        className="mb-2"
+                    ))
+            filter_controls.append(html.Div(
+                "Sélectionne un filtre pour afficher son contenu.",
+                id={"role": "missing-rate-filter-preview", "name": "missing_rate"},
+                className="text-muted small border rounded p-2",
+                style={"whiteSpace": "pre-wrap", "fontFamily": "monospace"}
+            ))
+            dataset_columns.append(dbc.Col(filter_controls, md=6))
+            dataset_columns.append(
+                dbc.Col([
+                    html.Label("Colonnes à analyser"),
+                    dcc.Dropdown(
+                        id={"role": "metric-column", "form": "metric"},
+                        options=[],
+                        multi=True,
+                        placeholder="Choisir une ou plusieurs colonnes",
+                        clearable=True,
+                        persistence=True,
+                        persistence_type="session"
+                    ),
+                    html.Small(
+                        "Laisse vide pour utiliser toutes les colonnes du dataset.",
+                        className="text-muted"
+                    )
+                ], md=6)
+            )
+        else:
+            dataset_columns.append(
+                dbc.Col([
+                    html.Label("Filtre (WHERE clause)"),
+                    dcc.Input(
+                        id={"role": "metric-where"},
+                        type="text",
+                        placeholder="Ex: status = 'active'",
+                        className="form-control",
+                        persistence=True,
+                        persistence_type="session"
+                    ),
+                    html.Small("Optionnel : condition SQL pour filtrer les données", className="text-muted")
+                ], md=6)
+            )
+
+        dataset_header = "🧩 Paramétrage spécifique" if metric_type == "missing_rate" else "📊 Sélection Dataset & Filtre"
+        dataset_row = [
+            dbc.CardHeader(dataset_header),
             dbc.CardBody([
                 html.Small("Sélectionnez parmi les datasets configurés à l'étape 1 (Datasets)", className="text-muted d-block mb-2"),
-                dbc.Row([
-                    dbc.Col([
-                        html.Label("Dataset (alias)"),
-                        dcc.Dropdown(
-                            id={"role": "metric-db"},
-                            options=[{"label": a, "value": a} for a in ds_aliases],
-                            value=ds_aliases[0] if ds_aliases else None,
-                            clearable=False,
-                            persistence=True,
-                            persistence_type="session",
-                            style={"display": "block" if db_visible else "none"}
-                        )
-                    ], md=6),
-                    dbc.Col([
-                        html.Label("Filtre (WHERE clause)"),
-                        dcc.Input(
-                            id={"role": "metric-where"},
-                            type="text",
-                            placeholder="Ex: status = 'active'",
-                            className="form-control",
-                            persistence=True,
-                            persistence_type="session"
-                        ),
-                        html.Small("Optionnel : condition SQL pour filtrer les données", className="text-muted")
-                    ], md=6)
-                ])
+                dbc.Row(dataset_columns)
             ])
-        ], className="mb-3")
+        ]
+
+        dataset_card = dbc.Card(dataset_row, className="mb-3")
 
         # Groupe 3: Sélection de Colonne et Options
         column_visible = meta.get("requires_column", False)
@@ -413,10 +1130,13 @@ def register_build_callbacks(app):
             # Ignorer dataset et columns (déjà gérés)
             if p_type in ["dataset", "columns"]:
                 continue
+
+            p_name = p.get("name")
+            if p_name == "specific":
+                continue
                 
             # text param
             if p_type == "text":
-                p_name = p.get("name")
                 p_label = p.get("label") or p_name
                 column_content.append(html.Label(p_label))
                 column_content.append(dcc.Input(
@@ -447,7 +1167,38 @@ def register_build_callbacks(app):
             ])
         ])
         
-        return html.Div([id_card, dataset_card, options_card, preview])
+        cards = [nature_card, identification_card, general_card, dataset_card]
+        if metric_type != "missing_rate":
+            cards.append(options_card)
+        cards.append(preview)
+        return html.Div(cards)
+
+    @app.callback(
+        Output({"role": "missing-rate-filter-preview", "name": MATCH}, "children"),
+        Input({"role": "missing-rate-filter", "name": MATCH}, "value"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
+        prevent_initial_call=False
+    )
+    def update_missing_rate_filter_preview(filter_value, search, inventory_store):
+        stream_ctx, project_ctx, zone_ctx = _resolve_context(search, inventory_store)
+        if not filter_value:
+            return html.Span("Sélectionne un filtre JSON pour afficher son contenu.", className="text-muted")
+        path = _resolve_filter_path(filter_value, stream_ctx, project_ctx, zone_ctx)
+        if not path:
+            label = f"{filter_value}.json"
+            return dbc.Alert(f"Filtre '{label}' introuvable pour ce contexte.", color="warning", className="mb-0")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception as exc:
+            return dbc.Alert(f"Impossible de lire le filtre: {exc}", color="danger", className="mb-0")
+        pretty = json.dumps(data, indent=2, ensure_ascii=False)
+        return html.Pre(
+            pretty,
+            className="bg-dark text-light p-2 rounded",
+            style={"whiteSpace": "pre-wrap", "margin": 0}
+        )
 
     @app.callback(
         Output({"role": "metric-column", "form": "metric"}, "options"),
@@ -557,49 +1308,94 @@ def register_build_callbacks(app):
         Output("toast", "children", allow_duplicate=True),
         Input("force-metric-preview", "n_clicks"),
         Input("metric-type", "value"),
-    Input({"role": "metric-id"}, "value", ALL),
-    Input({"role": "metric-db"}, "value", ALL),
-    Input({"role": "metric-column", "form": "metric"}, "value", ALL),
+        Input({"role": "metric-id"}, "value", ALL),
+        Input({"role": "metric-db"}, "value", ALL),
+        Input({"role": "metric-column", "form": "metric"}, "value", ALL),
         Input({"role": "metric-where"}, "value", ALL),
         Input({"role": "metric-expr"}, "value", ALL),
-        Input({"role": "metric-export"}, "value", ALL),
+        Input({"role": "metric-general", "field": "export"}, "value"),
+        State({"role": "metric-nature", "field": "name"}, "value"),
+        State({"role": "metric-nature", "field": "description"}, "value"),
+        State({"role": "metric-nature", "field": "comments"}, "value"),
         State({"role": "metric-param", "name": ALL}, "value"),
+        State({"role": "missing-rate-filter", "name": ALL}, "value"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
         State("store_metrics", "data"),
         prevent_initial_call=True
     )
-    def preview_metric(force, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mexport_list, mparam_values, metrics):
+    def preview_metric(
+        force,
+        mtype,
+        mid_list,
+        mdb_list,
+        mcol_list,
+        mwhere_list,
+        mexpr_list,
+        general_export_values,
+        metric_name,
+        metric_description,
+        metric_comments,
+        mparam_values,
+        missing_filter_values,
+        search,
+        inventory_store,
+        metrics
+    ):
         """Génère la prévisualisation JSON de la métrique"""
         if not mtype:
             return "", False, ""
         mid = first(mid_list)
         mdb = first(mdb_list)
-        # mcol_list IS the list of selected columns (multi=True dropdown returns the list directly)
-        mcol = mcol_list if mcol_list else None
+        # Extraire la sélection de colonnes (multi-dropdown -> liste de colonnes)
+        mcol = first(mcol_list)
         mwhere = first(mwhere_list)
         mexpr = first(mexpr_list)
         # metric params values come as a list corresponding to declared params order
         mparams = (mparam_values or [])
 
-        # mid is now expected to be a number or None. If provided, format as M-###.
+        # Build prefix from context and format id if numeric provided
+        prefix = build_id_prefix_from_context(search, inventory_store, "metric")
         display_id = None
         try:
-            if isinstance(mid, (int, float)) or (isinstance(mid, str) and mid.isdigit()):
+            if isinstance(mid, (int, float)) or (isinstance(mid, str) and str(mid).isdigit()):
                 num = int(mid)
-                display_id = f"M-{num:03d}"
+                display_id = f"{prefix}{num}"
         except Exception:
             display_id = None
+        export_selection = general_export_values or []
+        if isinstance(export_selection, (list, tuple, set)):
+            export_flag = "export" in export_selection
+        else:
+            export_flag = bool(export_selection)
         obj = {"id": (display_id or "(auto)"), "type": mtype}
         meta = get_metric_meta(mtype) or {}
         params = meta.get("params", [])
+        nature = {
+            "name": (metric_name or meta.get("name") or ""),
+            "description": metric_description or "",
+            "preliminary_comments": metric_comments or ""
+        }
+        if any(nature.values()):
+            obj["nature"] = nature
+        obj["identification"] = {"metric_id": obj.get("id")}
+        general_payload = {"export": export_flag}
+        obj["general"] = general_payload
         # Populate known params
         if "database" in params or meta.get("requires_database"):
             obj["database"] = mdb or ""
+        selected_columns = []
+        for entry in (mcol_list or []):
+            if isinstance(entry, list):
+                selected_columns.extend([c for c in entry if c not in (None, "")])
+            elif entry not in (None, ""):
+                selected_columns.append(entry)
+
         if "column" in params or meta.get("requires_column"):
-            # Handle both single column (string) and multi-column (list)
-            if isinstance(mcol, list):
-                obj["column"] = mcol if mcol else []
+            if selected_columns:
+                obj["column"] = selected_columns if len(selected_columns) > 1 else selected_columns[0]
             else:
-                obj["column"] = mcol or ""
+                obj["column"] = ""
         # Handle registered params: dataset/columns/where/expr
         # Look for params declared in meta and pull values from the form via pattern ids
         # Collect metric-param values from the DOM using dcc pattern ids is handled in add_metric via State
@@ -621,16 +1417,48 @@ def register_build_callbacks(app):
             obj["expr"] = mexpr or ""
         
         # Capture export value
-        mexport = first(mexport_list) if mexport_list else []
-        obj["export"] = bool(mexport and "export" in mexport)
+        if mtype == "missing_rate":
+            selected_filter = first(missing_filter_values)
+            spec = {}
+            dataset_value = obj.get("database") or mdb
+            if dataset_value:
+                spec["dataset"] = dataset_value
+            effective_columns = list(selected_columns)
+            if not effective_columns:
+                col_value = obj.get("column")
+                if isinstance(col_value, list):
+                    effective_columns = [c for c in col_value if c not in (None, "")]
+                elif col_value not in (None, ""):
+                    effective_columns = [col_value]
+
+            spec.pop("column", None)
+            spec.pop("columns", None)
+            if effective_columns:
+                if len(effective_columns) == 1:
+                    spec["column"] = effective_columns[0]
+                else:
+                    spec["column"] = effective_columns
+            if selected_filter:
+                spec["filter"] = selected_filter
+            if spec:
+                obj["specific"] = spec
+            obj.pop("condition", None)
+            obj.pop("where", None)
+            obj.pop("database", None)
+            obj.pop("column", None)
+        obj.pop("export", None)
+
+        preview_obj = copy.deepcopy(obj)
+        preview_obj.pop("id", None)
+        preview_obj.pop("type", None)
         
-        # If a concrete display_id was provided, check whether it already exists
+        # If a concrete display_id was provided, check whether it already exists for this prefix
         if display_id:
             existing_ids = {x.get("id") for x in (metrics or []) if x.get("id")}
             if display_id in existing_ids:
                 msg = f"Le numéro {display_id} est déjà utilisé. Un ID unique sera attribué automatiquement si nécessaire."
-                return json.dumps(obj, ensure_ascii=False, indent=2), True, msg
-        return json.dumps(obj, ensure_ascii=False, indent=2), False, ""
+                return json.dumps(preview_obj, ensure_ascii=False, indent=2), True, msg
+        return json.dumps(preview_obj, ensure_ascii=False, indent=2), False, ""
 
     @app.callback(
         Output("add-metric-status", "children"),
@@ -644,93 +1472,149 @@ def register_build_callbacks(app):
     State({"role": "metric-id"}, "value", ALL),
     State({"role": "metric-db"}, "value", ALL),
     State({"role": "metric-column", "form": "metric"}, "value", ALL),
-        State({"role": "metric-where"}, "value", ALL),
-        State({"role": "metric-expr"}, "value", ALL),
-        State({"role": "metric-param", "name": ALL}, "value"),
-        State({"role": "metric-export"}, "value", ALL),
+    State({"role": "metric-where"}, "value", ALL),
+    State({"role": "metric-expr"}, "value", ALL),
+    State({"role": "metric-param", "name": ALL}, "value"),
+    State({"role": "metric-general", "field": "export"}, "value"),
+        State({"role": "metric-nature", "field": "name"}, "value"),
+        State({"role": "metric-nature", "field": "description"}, "value"),
+        State({"role": "metric-nature", "field": "comments"}, "value"),
+        State({"role": "missing-rate-filter", "name": ALL}, "value"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
     )
-    def add_metric(n, preview_list, metrics, mtype, mid_list, mdb_list, mcol_list, mwhere_list, mexpr_list, mparam_values, mexport_list):
+    def add_metric(
+        n,
+        preview_list,
+        metrics,
+        mtype,
+        mid_list,
+        mdb_list,
+        mcol_list,
+        mwhere_list,
+        mexpr_list,
+        mparam_values,
+        general_export_values,
+        metric_name,
+        metric_description,
+        metric_comments,
+        missing_filter_values,
+        search,
+        inventory_store
+    ):
         """Ajoute une métrique au store et met à jour la liste"""
         if not n:
             return "", metrics, "", no_update
         
-        preview_text = first(preview_list)
-        m = None
-        if preview_text:
+        stream_ctx, project_ctx, zone_ctx = _resolve_context(search, inventory_store)
+        selected_filter = first(missing_filter_values)
+        mid_raw = first(mid_list)
+        mdb = first(mdb_list)
+        # Extraire la sélection de colonnes (multi-dropdown -> liste de colonnes)
+        mcol = first(mcol_list)
+        mwhere = first(mwhere_list)
+        mexpr = first(mexpr_list)
+        if not mtype:
+            return "Prévisualisation vide/invalide.", metrics, no_update, no_update
+        # Determine meta/params for this metric type
+        meta = get_metric_meta(mtype) or {}
+        params = meta.get("params", [])
+
+        # Normalize ID using prefix + numeric suffix. The prefix is locked and derived from context.
+        prefix = build_id_prefix_from_context(search, inventory_store, "metric")
+        m = {"id": None, "type": mtype}
+        candidate_id = None
+        if mid_raw is not None and mid_raw != "":
             try:
-                m = json.loads(preview_text)
+                mnum = int(mid_raw)
+                candidate_id = f"{prefix}{mnum}"
             except Exception:
-                m = None
-        if m is None:
-            mid_raw = first(mid_list)
-            mdb = first(mdb_list)
-            # mcol_list IS the list of selected columns (multi=True dropdown returns the list directly)
-            mcol = mcol_list if mcol_list else None
-            mwhere = first(mwhere_list)
-            mexpr = first(mexpr_list)
-            if not mtype:
-                return "Prévisualisation vide/invalide.", metrics, no_update, no_update
-            # Normalize ID: accept numeric (e.g. '1' -> M-001) or M-<num>; otherwise leave blank to auto-generate
-            m = {"id": None, "type": mtype}
-            # mid_raw should be numeric or None. Accept numeric strings as well.
-            if mid_raw is not None and mid_raw != "":
-                try:
-                    mnum = int(mid_raw)
-                    m["id"] = f"M-{mnum:03d}"
-                except Exception:
-                    # ignore and let auto-generate
-                    m["id"] = None
-            meta = get_metric_meta(mtype) or {}
-            params = meta.get("params", [])
-            # Generic population based on params
-            if "database" in params or meta.get("requires_database"):
-                m["database"] = mdb or ""
-            if "column" in params or meta.get("requires_column"):
-                # Handle both single column (string) and multi-column (list)
-                if isinstance(mcol, list):
-                    m["column"] = mcol if mcol else []
+                candidate_id = None
+
+        # Populate known params
+        if "database" in params or meta.get("requires_database"):
+            m["database"] = mdb or ""
+        selected_columns = []
+        for entry in (mcol_list or []):
+            if isinstance(entry, list):
+                selected_columns.extend([c for c in entry if c not in (None, "")])
+            elif entry not in (None, ""):
+                selected_columns.append(entry)
+
+        if "column" in params or meta.get("requires_column"):
+            if selected_columns:
+                m["column"] = selected_columns if len(selected_columns) > 1 else selected_columns[0]
+            else:
+                m["column"] = ""
+        if "where" in params and mwhere:
+            m["where"] = mwhere
+        if "expr" in params:
+            m["expr"] = mexpr or ""
+
+        # Metric-param values: map declared param names to provided values
+        try:
+            declared = [p.get('name') if isinstance(p, dict) else p for p in params]
+            for name, val in zip(declared, (mparam_values or [])):
+                if name is None:
+                    continue
+                if name == 'columns':
+                    m['columns'] = val or []
+                elif name == 'dataset_filter' or name == 'dataset':
+                    m['database_filter'] = val or ''
                 else:
-                    m["column"] = mcol or ""
-            if "where" in params and mwhere:
-                m["where"] = mwhere
-            if "expr" in params:
-                m["expr"] = mexpr or ""
-            # Metric-param values: metric-param name list corresponds to mparam_values order
-            # Extract common params by name if provided
-            try:
-                # mparam_values is a list of values corresponding to each metric-param input present
-                # We need to map declared params names to provided values - assume order matches meta.params
-                declared = [p.get('name') if isinstance(p, dict) else p for p in params]
-                for name, val in zip(declared, (mparam_values or [])):
-                    if name is None:
-                        continue
-                    # columns param may be single or list
-                    if name == 'columns':
-                        m['columns'] = val or []
-                    elif name == 'dataset_filter' or name == 'dataset':
-                        # store the selected alias
-                        m['database_filter'] = val or ''
-                    else:
-                        m[name] = val
-            except Exception:
-                pass
-            # Extract metric-param values (dataset_filter, columns, etc.)
-            try:
-                # Grab all metric-param inputs present in the DOM
-                from dash import callback_context
-                ctx = callback_context
-                # state values for metric-param are not directly accessible here; instead get them from function args by adding States
-            except Exception:
-                pass
-            
-            # Capture export value (checkbox returns list within a list due to ALL pattern)
-            # mexport_list is like [["export"]] if checked, [[]] if unchecked
-            mexport = first(mexport_list) if mexport_list else []
-            print(f"[DEBUG] mexport_list = {mexport_list}")
-            print(f"[DEBUG] mexport (first) = {mexport}")
-            print(f"[DEBUG] export final = {bool(mexport and 'export' in mexport)}")
-            m["export"] = bool(mexport and "export" in mexport)
+                    m[name] = val
+        except Exception:
+            pass
+        m["general"] = {"export": False}
+        export_selection = general_export_values or []
+        if isinstance(export_selection, (list, tuple, set)):
+            export_flag = "export" in export_selection
+        else:
+            export_flag = bool(export_selection)
+        existing_general = dict(m.get("general") or {})
+        existing_general["export"] = export_flag
+        m["general"] = existing_general
+        m.pop("export", None)
         
+        if metric_name or metric_description or metric_comments:
+            m["nature"] = {
+                "name": metric_name or "",
+                "description": metric_description or "",
+                "preliminary_comments": metric_comments or ""
+            }
+        m.setdefault("identification", {})
+        m["identification"]["metric_id"] = m.get("id")
+
+        if mtype == "missing_rate":
+            spec = dict(m.get("specific") or {})
+            dataset_value = m.get("database") or first(mdb_list)
+            if dataset_value:
+                spec["dataset"] = dataset_value
+            effective_columns = list(selected_columns)
+            if not effective_columns:
+                col_value = m.get("column")
+                if isinstance(col_value, list):
+                    effective_columns = [c for c in col_value if c not in (None, "")]
+                elif col_value not in (None, ""):
+                    effective_columns = [col_value]
+
+            spec.pop("column", None)
+            spec.pop("columns", None)
+            if effective_columns:
+                if len(effective_columns) == 1:
+                    spec["column"] = effective_columns[0]
+                else:
+                    spec["column"] = effective_columns
+            if selected_filter:
+                spec["filter"] = selected_filter
+            spec = {k: v for k, v in spec.items() if v not in (None, "", [])}
+            if spec:
+                m["specific"] = spec
+            m.pop("where", None)
+            m.pop("database", None)
+            m.pop("column", None)
+            m.pop("condition", None)
+
         metrics = (metrics or [])
         existing_ids = {x.get("id") for x in metrics}
         
@@ -754,6 +1638,11 @@ def register_build_callbacks(app):
                 next_num += 1
 
             m["id"] = f"M-{next_num:03d}"
+
+        if m.get("identification") is None:
+            m["identification"] = {}
+        if isinstance(m.get("identification"), dict):
+            m["identification"]["metric_id"] = m.get("id")
         
         metrics.append(m)
         items = [
@@ -775,30 +1664,82 @@ def register_build_callbacks(app):
             return dbc.Alert("Aucune métrique créée. Utilisez l'onglet 'Créer' pour ajouter des métriques.", color="info")
         
         # Préparer les données pour le tableau
+        def _describe_specific(spec: dict) -> str:
+            if not isinstance(spec, dict) or not spec:
+                return ""
+            parts = []
+            for key, value in spec.items():
+                if value in (None, "", [], {}):
+                    continue
+                if isinstance(value, list):
+                    rendered = ", ".join(map(str, value))
+                elif isinstance(value, dict):
+                    rendered = json.dumps(value, ensure_ascii=False)
+                else:
+                    rendered = str(value)
+                parts.append(f"{key}: {rendered}")
+            return " | ".join(parts)
+
+        def _first_value(data, key, default=""):
+            if isinstance(data, dict):
+                return data.get(key, default)
+            return default
+
         table_data = []
         for m in metrics:
+            general = m.get("general") or {}
+            specific = m.get("specific") or {}
+            nature = m.get("nature") or {}
+            identification = m.get("identification") or {}
+
+            export_flag = bool(general.get("export")) if isinstance(general, dict) else False
+            description = generate_metric_description(m)
+
+            params = m.get("params") or {}
+            dataset_val = params.get("dataset") if isinstance(params, dict) else ""
+            column_val = params.get("column") if isinstance(params, dict) else ""
+
             table_data.append({
                 "ID": m.get("id", "-"),
                 "Type": m.get("type", "-"),
-                "Export": "✓ Oui" if m.get("export", False) else "✗ Non",
-                "Description": generate_metric_description(m),
-                "_raw": json.dumps(m, ensure_ascii=False)  # Données brutes pour les actions
+                "Nature - Nom": _first_value(nature, "name"),
+                "Nature - Description": _first_value(nature, "description"),
+                "Nature - Commentaires": _first_value(nature, "preliminary_comments"),
+                "Identification - Metric ID": identification.get("metric_id") or m.get("id", "-"),
+                "Général - Export": "Oui" if export_flag else "Non",
+                "Général - Owner": _first_value(general, "owner"),
+                "Général - Fréquence": _first_value(general, "frequency"),
+                "Dataset": dataset_val,
+                "Colonnes": ", ".join(column_val) if isinstance(column_val, list) else column_val,
+                "Paramétrage spécifique (résumé)": _describe_specific(specific),
+                "Description": description,
+                "_raw": json.dumps(m, ensure_ascii=False)
             })
         
-        # Créer le tableau DataTable
+        columns = [
+            {"name": "ID", "id": "ID"},
+            {"name": "Type", "id": "Type"},
+            {"name": "Nature - Nom", "id": "Nature - Nom"},
+            {"name": "Nature - Description", "id": "Nature - Description"},
+            {"name": "Nature - Commentaires", "id": "Nature - Commentaires"},
+            {"name": "Identification - Metric ID", "id": "Identification - Metric ID"},
+            {"name": "Général - Export", "id": "Général - Export"},
+            {"name": "Général - Owner", "id": "Général - Owner"},
+            {"name": "Général - Fréquence", "id": "Général - Fréquence"},
+            {"name": "Dataset", "id": "Dataset"},
+            {"name": "Colonnes", "id": "Colonnes"},
+            {"name": "Paramétrage spécifique (résumé)", "id": "Paramétrage spécifique (résumé)"},
+            {"name": "Description", "id": "Description"},
+        ]
+
         table = dash_table.DataTable(
             data=table_data,
-            columns=[
-                {"name": "ID", "id": "ID"},
-                {"name": "Type", "id": "Type"},
-                {"name": "Export", "id": "Export"},
-                {"name": "Description", "id": "Description"},
-            ],
+            columns=columns,
             style_table={'overflowX': 'auto'},
             style_cell={
                 'textAlign': 'left',
                 'padding': '10px',
-                'whiteSpace': 'normal',
+                'whiteSpace': 'pre-line',
                 'height': 'auto',
             },
             style_header={
@@ -812,16 +1753,134 @@ def register_build_callbacks(app):
                 }
             ],
             style_cell_conditional=[
-                {'if': {'column_id': 'ID'}, 'width': '10%'},
+                {'if': {'column_id': 'ID'}, 'width': '8%'},
                 {'if': {'column_id': 'Type'}, 'width': '10%'},
-                {'if': {'column_id': 'Export'}, 'width': '10%'},
-                {'if': {'column_id': 'Description'}, 'width': '70%'},
-            ]
+                {'if': {'column_id': 'Type'}, 'width': '8%'},
+                {'if': {'column_id': 'Nature - Nom'}, 'width': '12%'},
+                {'if': {'column_id': 'Nature - Description'}, 'width': '18%'},
+                {'if': {'column_id': 'Nature - Commentaires'}, 'width': '18%'},
+                {'if': {'column_id': 'Identification - Metric ID'}, 'width': '12%'},
+                {'if': {'column_id': 'Général - Export'}, 'width': '8%'},
+                {'if': {'column_id': 'Général - Owner'}, 'width': '12%'},
+                {'if': {'column_id': 'Général - Fréquence'}, 'width': '12%'},
+                {'if': {'column_id': 'Dataset'}, 'width': '12%'},
+                {'if': {'column_id': 'Colonnes'}, 'width': '18%'},
+                {'if': {'column_id': 'Paramétrage spécifique (résumé)'}, 'width': '24%'},
+                {'if': {'column_id': 'Description'}, 'width': '24%'},
+            ],
+            markdown_options={"link_target": "_blank"}
         )
-        
+
+        # Calculer les datasets virtuels (colonnes produites)
+        ensure_plugins_discovered()
+        virtual_items = []
+        error_items = []
+
+        for m in metrics:
+            metric_id = m.get("id") or "?"
+            metric_type = m.get("type") or "?"
+            plugin_class = REGISTRY.get(metric_type)
+            if not plugin_class:
+                continue
+
+            params_for_schema = _build_params_for_virtual_schema(m)
+
+            try:
+                virtual_ds = plugin_class.create_virtual_dataset(metric_id, params_for_schema)
+            except Exception as exc:
+                error_items.append(html.Li(
+                    f"{metric_id} ({metric_type}) → erreur récupération schéma: {exc}",
+                    className="text-danger"
+                ))
+                continue
+
+            if not virtual_ds:
+                continue
+
+            columns_rows = []
+            for col in virtual_ds.schema.columns:
+                columns_rows.append({
+                    "Nom": col.name,
+                    "Type": col.dtype,
+                    "Nullable": "Oui" if col.nullable else "Non",
+                    "Description": col.description or ""
+                })
+
+            schema_table = dash_table.DataTable(
+                data=columns_rows,
+                columns=[
+                    {"name": "Nom", "id": "Nom"},
+                    {"name": "Type", "id": "Type"},
+                    {"name": "Nullable", "id": "Nullable"},
+                    {"name": "Description", "id": "Description"},
+                ],
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'left', 'padding': '6px'},
+                page_size=max(len(columns_rows), 1)
+            )
+
+            meta_bits = []
+            source_dataset = (
+                m.get("database")
+                or (m.get("params") or {}).get("dataset")
+                or (m.get("specific") or {}).get("dataset")
+            )
+            if source_dataset:
+                meta_bits.append(html.Div(f"Dataset source : {source_dataset}", className="text-muted mb-1"))
+            if virtual_ds.schema.estimated_row_count is not None:
+                meta_bits.append(html.Div(
+                    f"Volume estimé : ~{virtual_ds.schema.estimated_row_count} lignes",
+                    className="text-muted mb-2"
+                ))
+
+            accordion_body = [
+                html.Div(f"Alias virtuel : {virtual_ds.alias}", className="text-muted"),
+                *(meta_bits or []),
+                html.H6("Colonnes exposées", className="mt-2"),
+                schema_table
+            ]
+
+            virtual_items.append(
+                dbc.AccordionItem(
+                    accordion_body,
+                    title=f"{metric_id} • {metric_type}",
+                    item_id=str(metric_id)
+                )
+            )
+
+        extra_blocks = []
+        if error_items:
+            extra_blocks.append(
+                dbc.Alert([
+                    html.Strong("Erreurs schéma virtuel"),
+                    html.Ul(error_items, className="mb-0")
+                ], color="danger", className="mt-4")
+            )
+
+        if virtual_items:
+            extra_blocks.append(html.Hr(className="my-4"))
+            extra_blocks.append(html.H6("Datasets virtuels générés", className="mb-2"))
+            extra_blocks.append(
+                dbc.Accordion(
+                    virtual_items,
+                    always_open=False,
+                    flush=True,
+                    id="metrics-virtual-accordion"
+                )
+            )
+        else:
+            extra_blocks.append(
+                dbc.Alert(
+                    "Aucune métrique ne produit de dataset virtuel pour le moment.",
+                    color="secondary",
+                    className="mt-4"
+                )
+            )
+
         return html.Div([
             html.H6(f"📊 {len(metrics)} métrique(s) configurée(s)", className="mb-3"),
-            table
+            table,
+            *extra_blocks
         ])
 
     # ===== Tests =====
@@ -830,47 +1889,248 @@ def register_build_callbacks(app):
         Output("test-params", "children"),
         Input("test-type", "value"),
         State("store_datasets", "data"),
-        State("store_metrics", "data")
+        State("store_metrics", "data"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
+        State("store_tests", "data"),
+        State("run-context-store", "data")
     )
-    def render_test_form(test_type, ds_data, metrics):
+    def render_test_form(test_type, ds_data, metrics, search, inventory_store, stored_tests, run_context_data):
         """Affiche le formulaire de création de test selon le type avec groupes visuels"""
         if not test_type:
             return dbc.Alert("Choisis un type de test.", color="light")
+        quarter_value = (run_context_data or {}).get("quarter")
+        if not quarter_value:
+            return dbc.Alert("Sélectionne d'abord un quarter dans le contexte avant de configurer un test.", color="warning")
         ds_aliases = [d["alias"] for d in (ds_data or [])]
         if not ds_aliases:
             return dbc.Alert("Enregistre d'abord des datasets.", color="warning")
 
-        # Groupe 1: Identification
-        id_card = dbc.Card([
-            dbc.CardHeader("📝 Identification"),
+        metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
+
+        plugin_label = ""
+        try:
+            plugins = discover_all_plugins(verbose=False)
+            info = plugins.get(test_type)
+            if info:
+                plugin_label = getattr(info.plugin_class, "label", test_type)
+        except Exception:
+            plugin_label = test_type
+        plugin_label = plugin_label or test_type
+
+        nature_card = dbc.Card([
+            dbc.CardHeader("📘 Nature du test"),
             dbc.CardBody([
                 dbc.Row([
                     dbc.Col([
-                        html.Label("ID du test"),
+                        html.Label("Nom du test"),
+                        dcc.Input(
+                            id={"role": "test-nature", "field": "name"},
+                            type="text",
+                            value=plugin_label,
+                            placeholder="Sélectionné automatiquement",
+                            className="form-control",
+                            disabled=True,
+                            style={"backgroundColor": "#f8f9fa"},
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=4)
+                ], className="mb-3"),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Functional category 1"),
+                        dcc.Input(
+                            id={"role": "test-nature", "field": "functional_category_1"},
+                            type="text",
+                            placeholder="Catégorie principale",
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=4),
+                    dbc.Col([
+                        html.Label("Functional category 2"),
+                        dcc.Input(
+                            id={"role": "test-nature", "field": "functional_category_2"},
+                            type="text",
+                            placeholder="Sous-catégorie",
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=4),
+                    dbc.Col([
+                        html.Label("Category"),
+                        dcc.Input(
+                            id={"role": "test-nature", "field": "category"},
+                            type="text",
+                            placeholder="Type de contrôle",
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off"
+                        )
+                    ], md=4)
+                ]),
+                html.Label("Description", className="mt-3"),
+                dcc.Textarea(
+                    id={"role": "test-nature", "field": "description"},
+                    placeholder="Décris le contrôle et l'objectif du test",
+                    className="form-control",
+                    style={"minHeight": "100px"},
+                    persistence=True,
+                    persistence_type="session"
+                ),
+                html.Label("Commentaires préliminaires", className="mt-3"),
+                dcc.Textarea(
+                    id={"role": "test-nature", "field": "comments"},
+                    placeholder="Notes, hypothèses, périmètre...",
+                    className="form-control",
+                    style={"minHeight": "80px"},
+                    persistence=True,
+                    persistence_type="session"
+                )
+            ])
+        ], className="mb-3")
+
+        # build id prefix and propose a number
+        prefix = build_id_prefix_from_context(search, inventory_store, "test")
+        proposed_num = 1
+        try:
+            existing = stored_tests or []
+            pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+            nums = [int(m.group(1)) for m in (pattern.match(x.get("id" or "") or "") for x in existing) if m]
+            if nums:
+                proposed_num = max(nums) + 1
+        except Exception:
+            proposed_num = 1
+
+        identification_card = dbc.Card([
+            dbc.CardHeader("🪪 Identification du test"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Quarter (contexte)"),
+                        dcc.Input(
+                            id={"role": "test-id-quarter"},
+                            type="text",
+                            value=quarter_value,
+                            disabled=True,
+                            className="form-control",
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=4)
+                ], className="mb-3"),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Préfixe"),
+                        dcc.Input(
+                            id={"role": "test-id-prefix"},
+                            type="text",
+                            value=prefix,
+                            disabled=True,
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Numéro"),
                         dcc.Input(
                             id={"role": "test-id"},
                             type="number",
                             value=None,
-                            placeholder="Entrez un numéro (ex: 1 pour T-001) ou laissez vide",
+                            placeholder=f"Proposé: {proposed_num}",
                             style={"width": "100%"},
                             persistence=True,
                             persistence_type="session",
                             min=1,
                             autoComplete="off"
                         ),
-                        html.Small("Saisis seulement le numéro. Préfixe 'T-' sera ajouté automatiquement.", className="text-muted")
-                    ], md=6),
+                        html.Small("Saisis seulement le numéro. Le préfixe est verrouillé.", className="text-muted")
+                    ], md=3),
                     dbc.Col([
-                        html.Label("Sévérité"),
+                        html.Label("Control name"),
+                        dcc.Input(
+                            id={"role": "test-identification", "field": "control_name"},
+                            type="text",
+                            placeholder="Nom du contrôle",
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off",
+                            disabled=True,
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Control ID"),
+                        dcc.Input(
+                            id={"role": "test-identification", "field": "control_id"},
+                            type="text",
+                            placeholder="Identifiant externe",
+                            className="form-control",
+                            persistence=True,
+                            persistence_type="session",
+                            autoComplete="off",
+                            disabled=True,
+                            style={"backgroundColor": "#f8f9fa"}
+                        )
+                    ], md=3),
+                    dbc.Col([
+                        html.Label("Associated metric"),
+                        dcc.Dropdown(
+                            id={"role": "test-identification", "field": "associated_metric_id"},
+                            options=[{"label": mid, "value": mid} for mid in metric_ids],
+                            placeholder="Sélectionne une métrique",
+                            clearable=True,
+                            persistence=True,
+                            persistence_type="session"
+                        )
+                    ], md=3)
+                ])
+            ])
+        ], className="mb-3")
+
+        general_card = dbc.Card([
+            dbc.CardHeader("🧩 Paramétrage général"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Degré de criticité"),
                         dcc.Dropdown(
                             id={"role": "test-sev"},
-                            options=[{"label": x, "value": x} for x in ["low", "medium", "high"]],
+                            options=[{"label": label, "value": value} for label, value in [
+                                ("Faible", "low"),
+                                ("Moyen", "medium"),
+                                ("Élevé", "high")
+                            ]],
                             value="medium",
                             clearable=False,
                             persistence=True,
                             persistence_type="session"
                         )
-                    ], md=3),
+                    ], md=4),
+                    dbc.Col([
+                        html.Label("Action en cas de KO"),
+                        dcc.Dropdown(
+                            id={"role": "test-action"},
+                            options=[
+                                {"label": "Arrêter le pipeline", "value": "stop_pipeline"},
+                                {"label": "Alerter", "value": "raise_alert"},
+                                {"label": "Loguer uniquement", "value": "log_only"}
+                            ],
+                            value="raise_alert",
+                            clearable=False,
+                            persistence=True,
+                            persistence_type="session"
+                        )
+                    ], md=4),
                     dbc.Col([
                         html.Label("Échantillon si échec"),
                         dcc.Checklist(
@@ -880,38 +2140,29 @@ def register_build_callbacks(app):
                             persistence=True,
                             persistence_type="session"
                         )
-                    ], md=3),
+                    ], md=4)
                 ])
             ])
         ], className="mb-3")
 
         if test_type == "range":
-            metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
-            
-            # Groupe 2: Choix du type de source
-            source_choice_card = dbc.Card([
-                dbc.CardHeader("🎯 Source des données"),
-                dbc.CardBody([
-                    html.Label("Type de source", className="mb-2"),
-                    dcc.RadioItems(
-                        id={"role": "test-source-type"},
-                        options=[
-                            {"label": " 📁 Base de données (colonne)", "value": "database"},
-                            {"label": " 📊 Métrique", "value": "metric"}
-                        ],
-                        value="database",
-                        persistence=True,
-                        persistence_type="session",
-                        className="mb-3"
-                    ),
-                    html.Div(id={"role": "test-source-inputs"})
-                ])
-            ], className="mb-3")
-            
-            # Application selon le choix (sera géré par callback)
-            target_card = source_choice_card
-            
-            # Groupe 3: Paramètres spécifiques
+            source_section = html.Div([
+                html.H6("🎯 Source des données", className="mb-3"),
+                html.Label("Type de source", className="mb-2"),
+                dcc.RadioItems(
+                    id={"role": "test-source-type"},
+                    options=[
+                        {"label": " 📁 Base de données (colonne)", "value": "database"},
+                        {"label": " 📊 Métrique", "value": "metric"}
+                    ],
+                    value="database",
+                    persistence=True,
+                    persistence_type="session",
+                    className="mb-3"
+                ),
+                html.Div(id={"role": "test-source-inputs"})
+            ], className="mb-4")
+
             params_content = []
             if test_type == "range":
                 params_content = [
@@ -959,13 +2210,20 @@ def register_build_callbacks(app):
                         html.Small("Valeur par défaut: regex email", className="text-muted")
                     ], md=12)])
                 ]
-            
-            params_card = dbc.Card([
-                dbc.CardHeader("⚙️ Paramètres du test"),
-                dbc.CardBody(params_content if params_content else [html.P("Aucun paramètre spécifique pour ce type", className="text-muted")])
-            ], className="mb-3") if params_content else html.Div()
-            
-            # Prévisualisation
+
+            params_section = html.Div([
+                html.H6("⚙️ Paramétrage spécifique", className="mb-3"),
+                *(params_content or [html.P("Aucun paramètre spécifique pour ce type", className="text-muted")])
+            ])
+
+            specific_card = dbc.Card([
+                dbc.CardHeader("⚙️ Paramétrage spécifique"),
+                dbc.CardBody([
+                    source_section,
+                    params_section
+                ])
+            ], className="mb-3")
+
             preview = dbc.Card([
                 dbc.CardHeader("👁️ Prévisualisation"),
                 dbc.CardBody([
@@ -976,7 +2234,98 @@ def register_build_callbacks(app):
                 ])
             ])
             
-            return html.Div([id_card, target_card, params_card, preview])
+            return html.Div([nature_card, identification_card, general_card, specific_card, preview])
+
+        if test_type == "test.interval_check":
+            source_section = html.Div([
+                html.H6("🎯 Source des données", className="mb-3"),
+                html.Label("Type de source", className="mb-2"),
+                dcc.RadioItems(
+                    id={"role": "test-source-type"},
+                    options=[
+                        {"label": " 📊 Valeur de métrique", "value": "metric"},
+                        {"label": " 📁 Colonnes de dataset", "value": "database"},
+                    ],
+                    value="metric",
+                    persistence=True,
+                    persistence_type="session",
+                    className="mb-3"
+                ),
+                html.Div(id={"role": "test-source-inputs"})
+            ], className="mb-4")
+
+            bounds_section = html.Div([
+                html.H6("⚖️ Contrôle des bornes", className="mb-3"),
+                html.Div(
+                    dbc.Row([
+                        dbc.Col([
+                            dbc.Checkbox(
+                                id={"role": "interval-lower-enabled"},
+                                value=False,
+                                label="Activer borne minimale (>=)"
+                            ),
+                            dcc.Input(
+                                id={"role": "interval-lower-value"},
+                                type="number",
+                                placeholder="Ex: 0",
+                                className="form-control mt-2"
+                            )
+                        ], md=6),
+                        dbc.Col([
+                            dbc.Checkbox(
+                                id={"role": "interval-upper-enabled"},
+                                value=False,
+                                label="Activer borne maximale (<=)"
+                            ),
+                            dcc.Input(
+                                id={"role": "interval-upper-value"},
+                                type="number",
+                                placeholder="Ex: 100",
+                                className="form-control mt-2"
+                            )
+                        ], md=6)
+                    ], className="g-3"),
+                    id="interval-general-bounds",
+                    className="mb-3"
+                ),
+                dcc.Store(id="interval-rules-store", data=[], storage_type="session"),
+                html.Div([
+                    html.Div("Configure des règles spécifiques par colonne pour appliquer des bornes minimales et maximales.", className="text-muted mb-2"),
+                    dbc.Button(
+                        "➕ Ajouter une règle",
+                        id="interval-add-rule",
+                        size="sm",
+                        outline=True,
+                        color="secondary",
+                        className="mb-2"
+                    ),
+                    html.Div(id="interval-rules-container"),
+                    html.Small(
+                        "Chaque règle peut cibler une ou plusieurs colonnes et définir des bornes min/max.",
+                        className="text-muted d-block mt-2"
+                    )
+                ], id="interval-rules-wrapper")
+            ])
+
+            specific_card = dbc.Card([
+                dbc.CardHeader("⚙️ Paramétrage spécifique"),
+                dbc.CardBody([
+                    source_section,
+                    bounds_section
+                ])
+            ], className="mb-3")
+
+            preview = dbc.Card([
+                dbc.CardHeader("👁️ Prévisualisation"),
+                dbc.CardBody([
+                    html.Pre(
+                        id={"role": "test-preview"},
+                        style={"background": "#222", "color": "#eee", "padding": "0.75rem"}
+                    )
+                ])
+            ])
+
+            return html.Div([nature_card, identification_card, general_card, specific_card, preview])
 
         return dbc.Alert("Type non géré pour l'instant.", color="warning")
 
@@ -984,13 +2333,15 @@ def register_build_callbacks(app):
         Output({"role": "test-source-inputs"}, "children"),
         Input({"role": "test-source-type"}, "value", ALL),
         State("store_datasets", "data"),
-        State("store_metrics", "data")
+        State("store_metrics", "data"),
+        State("test-type", "value")
     )
-    def update_test_source_inputs(source_type_list, ds_data, metrics):
+    def update_test_source_inputs(source_type_list, ds_data, metrics, current_test_type):
         """Affiche les champs appropriés selon le choix database/metric"""
         source_type = first(source_type_list) or "database"
         ds_aliases = [d["alias"] for d in (ds_data or [])]
         metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
+        is_interval = current_test_type == "test.interval_check"
         
         if source_type == "database":
             return dbc.Row([
@@ -1006,15 +2357,17 @@ def register_build_callbacks(app):
                     )
                 ], md=6),
                 dbc.Col([
-                    html.Label("Colonne"),
+                    html.Label("Colonnes" if is_interval else "Colonne"),
                     dcc.Dropdown(
                         id={"role": "test-col"},
                         options=[],
-                        placeholder="Choisir une colonne",
-                        clearable=False,
+                        placeholder="Choisir une ou plusieurs colonnes" if is_interval else "Choisir une colonne",
+                        clearable=True if is_interval else False,
+                        multi=is_interval,
                         persistence=True,
                         persistence_type="session"
-                    )
+                    ),
+                    html.Small("Sélection multiple autorisée." if is_interval else "", className="text-muted")
                 ], md=6)
             ])
         else:  # metric
@@ -1055,13 +2408,290 @@ def register_build_callbacks(app):
         return opts, False, ""
 
     @app.callback(
+        Output("interval-rules-store", "data", allow_duplicate=True),
+        Input("interval-add-rule", "n_clicks"),
+        State("interval-rules-store", "data"),
+        State("test-type", "value"),
+        prevent_initial_call=True,
+    )
+    def add_interval_rule(n_clicks, store_data, current_test_type):
+        """Ajoute une nouvelle règle vide au store (utilisé pour rendre un bloc de paramètres)."""
+        if not n_clicks:
+            raise PreventUpdate
+        if current_test_type != "test.interval_check":
+            raise PreventUpdate
+        data = list(store_data or [])
+        new_id = uuid4().hex
+        data.append({
+            "id": new_id,
+            "columns": [],
+            "lower_value": None,
+            "upper_value": None,
+        })
+        return data
+
+
+    @app.callback(
+        Output("interval-rules-container", "children"),
+        Input("interval-rules-store", "data"),
+        State({"role": "test-db"}, "value", ALL),
+        State("store_datasets", "data"),
+        State({"role": "test-metric"}, "value", ALL),
+        State("store_metrics", "data"),
+        State({"role": "test-source-type"}, "value", ALL),
+    )
+    def render_interval_rules(store_data, db_values, ds_data, metric_values, metrics_store, source_type_values):
+        """Rend les blocs éditables pour chaque règle stockée."""
+        if not store_data:
+            store_data = []
+        source_type = first(source_type_values) or "database"
+        opts = []
+        if source_type == "metric":
+            metric_id = first(metric_values)
+            columns = _get_metric_output_columns(metric_id, metrics_store)
+            opts = [{"label": c, "value": c} for c in (columns or [])]
+        else:
+            # Determine dataset name from test-db if possible
+            db_alias = first(db_values)
+            ds_name = None
+            if ds_data and db_alias:
+                ds_name = next((d["dataset"] for d in ds_data if d.get("alias") == db_alias), None)
+            if not ds_name:
+                ds_name = db_alias
+
+            cols = get_columns_for_dataset(ds_name) if ds_name else []
+            opts = [{"label": c, "value": c} for c in (cols or [])]
+
+        children = []
+        for idx, rule in enumerate(store_data):
+            rid = rule.get("id") or f"r{idx}"
+            card = dbc.Card([
+                dbc.CardHeader(html.Div([
+                    html.Strong(f"Règle {idx+1}"),
+                    dbc.Button("Supprimer", id={"role": "interval-remove", "index": rid}, size="sm", color="danger", outline=True, className="ms-2")
+                ])),
+                dbc.CardBody([
+                    dcc.Dropdown(
+                        id={"role": "interval-rule-columns", "index": rid},
+                        options=opts,
+                        value=rule.get("columns") or [],
+                        multi=True,
+                        placeholder="Choisir colonnes",
+                        clearable=True,
+                    ),
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Borne minimale (>=)", className="small text-muted"),
+                            dcc.Input(id={"role": "interval-rule-lower-value", "index": rid}, type="number", value=rule.get("lower_value"), placeholder="aucune", className="form-control")
+                        ], md=6),
+                        dbc.Col([
+                            html.Label("Borne maximale (<=)", className="small text-muted"),
+                            dcc.Input(id={"role": "interval-rule-upper-value", "index": rid}, type="number", value=rule.get("upper_value"), placeholder="aucune", className="form-control")
+                        ], md=6)
+                    ], className="mt-3")
+                ])
+            ], className="mb-2")
+            children.append(card)
+        return children
+
+
+    @app.callback(
+        Output("interval-general-bounds", "style", allow_duplicate=True),
+        Output("interval-rules-wrapper", "style", allow_duplicate=True),
+        Output("interval-add-rule", "disabled", allow_duplicate=True),
+        Input({"role": "test-source-type"}, "value", ALL),
+        prevent_initial_call="initial_duplicate"
+    )
+    def toggle_interval_sections(source_type_values):
+        source_type = first(source_type_values) or "metric"
+        if source_type in {"metric", "database"}:
+            return {"display": "none"}, {}, False
+        return {"display": "none"}, {}, False
+
+
+    def _update_interval_rule_entry(store_data, rid, **updates):
+        if not store_data or not rid:
+            return store_data or [], False
+        updated = []
+        changed = False
+        for item in store_data:
+            if item.get("id") == rid:
+                new_item = dict(item)
+                for key, value in updates.items():
+                    new_item[key] = value
+                updated.append(new_item)
+                changed = True
+            else:
+                updated.append(item)
+        return updated, changed
+
+
+    def _resolve_rule_value(values_list, store_data, rid):
+        if not store_data or not isinstance(store_data, list):
+            return None
+        for idx, item in enumerate(store_data):
+            if item.get("id") == rid and idx < len(values_list):
+                return values_list[idx]
+        return None
+
+
+    def _normalize_interval_rules(store_rules):
+        """Convertit le store des règles en structure exportable pour la prévisualisation."""
+        normalized = []
+        for entry in store_rules or []:
+            columns = [c for c in (entry.get("columns") or []) if c]
+            if not columns:
+                continue
+            lower_val = _cast_optional_number(entry.get("lower_value", entry.get("lower")))
+            upper_val = _cast_optional_number(entry.get("upper_value", entry.get("upper")))
+            if lower_val is None and upper_val is None:
+                continue
+            normalized.append({
+                "columns": columns,
+                "lower": lower_val,
+                "upper": upper_val,
+            })
+        return normalized
+
+
+    @app.callback(
+        Output("interval-rules-store", "data", allow_duplicate=True),
+        Input({"role": "interval-rule-columns", "index": ALL}, "value"),
+        State("interval-rules-store", "data"),
+        prevent_initial_call=True,
+    )
+    def sync_interval_rule_columns(new_columns_list, store_data):
+        triggered = callback_context.triggered_id
+        if not isinstance(triggered, dict):
+            raise PreventUpdate
+        rid = triggered.get("index")
+        new_columns = _resolve_rule_value(new_columns_list or [], store_data or [], rid)
+        if new_columns is None:
+            raise PreventUpdate
+        normalized = []
+        if isinstance(new_columns, (list, tuple, set)):
+            normalized = [c for c in new_columns if c not in (None, "")]
+        elif new_columns not in (None, ""):
+            normalized = [new_columns]
+        updated, changed = _update_interval_rule_entry(store_data, rid, columns=normalized)
+        if not changed:
+            raise PreventUpdate
+        return updated
+
+
+    @app.callback(
+        Output("interval-rules-store", "data", allow_duplicate=True),
+        Input({"role": "interval-rule-lower-value", "index": ALL}, "value"),
+        State("interval-rules-store", "data"),
+        prevent_initial_call=True,
+    )
+    def sync_interval_rule_lower_value(value_list, store_data):
+        triggered = callback_context.triggered_id
+        if not isinstance(triggered, dict):
+            raise PreventUpdate
+        rid = triggered.get("index")
+        raw_value = _resolve_rule_value(value_list or [], store_data or [], rid)
+        updates = {"lower_value": _cast_optional_number(raw_value)}
+        updated, changed = _update_interval_rule_entry(store_data, rid, **updates)
+        if not changed:
+            raise PreventUpdate
+        return updated
+
+
+    @app.callback(
+        Output("interval-rules-store", "data", allow_duplicate=True),
+        Input({"role": "interval-rule-upper-value", "index": ALL}, "value"),
+        State("interval-rules-store", "data"),
+        prevent_initial_call=True,
+    )
+    def sync_interval_rule_upper_value(value_list, store_data):
+        triggered = callback_context.triggered_id
+        if not isinstance(triggered, dict):
+            raise PreventUpdate
+        rid = triggered.get("index")
+        raw_value = _resolve_rule_value(value_list or [], store_data or [], rid)
+        updates = {"upper_value": _cast_optional_number(raw_value)}
+        updated, changed = _update_interval_rule_entry(store_data, rid, **updates)
+        if not changed:
+            raise PreventUpdate
+        return updated
+
+
+    @app.callback(
+        Output("interval-rules-store", "data", allow_duplicate=True),
+        Input({"role": "interval-remove", "index": ALL}, "n_clicks"),
+        State("interval-rules-store", "data"),
+        prevent_initial_call=True,
+    )
+    def remove_interval_rule(remove_clicks, store_data):
+        """Supprime la règle correspondant au bouton cliqué."""
+        if not store_data:
+            return []
+        triggered = callback_context.triggered_id
+        if not triggered:
+            return store_data
+        # triggered is a dict with role/index
+        rid = triggered.get("index")
+        new_store = [r for r in store_data if r.get("id") != rid]
+        return new_store
+
+
+    @app.callback(
+        Output({"role": "test-identification", "field": "control_name"}, "value"),
+        Input("test-type", "value")
+    )
+    def sync_control_name_from_test(test_type_value):
+        """Associe automatiquement le control name au libellé du test sélectionné."""
+        if not test_type_value:
+            return ""
+        try:
+            ensure_plugins_discovered()
+            plugins = discover_all_plugins(verbose=False)
+            info = plugins.get(test_type_value)
+            if not info:
+                return ""
+            label = getattr(info.plugin_class, "label", None) or getattr(info, "name", "")
+            return label or ""
+        except Exception:
+            return ""
+
+
+    @app.callback(
+        Output({"role": "test-identification", "field": "control_id"}, "value"),
+        Input({"role": "test-id-prefix"}, "value"),
+        Input({"role": "test-id"}, "value")
+    )
+    def sync_control_id_from_prefix(prefix_value, number_value):
+        """Concatène automatiquement le préfixe et le numéro pour le Control ID."""
+        prefix_value = prefix_value or ""
+        if number_value in (None, ""):
+            return prefix_value
+        try:
+            number_int = int(number_value)
+            return f"{prefix_value}{number_int}"
+        except Exception:
+            return prefix_value
+
+    @app.callback(
         Output({"role": "test-preview"}, "children"),
         Output("toast", "is_open", allow_duplicate=True),
         Output("toast", "children", allow_duplicate=True),
+        Input("force-test-preview", "n_clicks"),
         Input("test-type", "value"),
         Input({"role": "test-id"}, "value", ALL),
         Input({"role": "test-sev"}, "value", ALL),
         Input({"role": "test-sof"}, "value", ALL),
+    State({"role": "test-action"}, "value"),
+    State({"role": "test-nature", "field": "name"}, "value"),
+    State({"role": "test-nature", "field": "functional_category_1"}, "value"),
+    State({"role": "test-nature", "field": "functional_category_2"}, "value"),
+    State({"role": "test-nature", "field": "category"}, "value"),
+    State({"role": "test-nature", "field": "description"}, "value"),
+    State({"role": "test-nature", "field": "comments"}, "value"),
+    State({"role": "test-identification", "field": "control_name"}, "value"),
+    State({"role": "test-identification", "field": "control_id"}, "value"),
+    State({"role": "test-identification", "field": "associated_metric_id"}, "value"),
+    Input({"role": "test-source-type"}, "value", ALL),
         Input({"role": "test-db"}, "value", ALL),
         Input({"role": "test-col"}, "value", ALL),
         Input({"role": "test-metric"}, "value", ALL),
@@ -1070,10 +2700,17 @@ def register_build_callbacks(app):
         Input({"role": "test-pattern"}, "value", ALL),
         Input({"role": "test-ref-db"}, "value", ALL),
         Input({"role": "test-ref-col"}, "value", ALL),
+        Input("interval-rules-store", "data"),
+        Input({"role": "interval-lower-enabled"}, "value", ALL),
+        Input({"role": "interval-lower-value"}, "value", ALL),
+        Input({"role": "interval-upper-enabled"}, "value", ALL),
+        Input({"role": "interval-upper-value"}, "value", ALL),
         State("store_tests", "data"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
         prevent_initial_call=True
     )
-    def preview_test(ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list, tests):
+    def preview_test(force, ttype, tid_list, sev_list, sof_list, action_on_fail, nature_name, func_cat1, func_cat2, cat, desc, comments, control_name, control_id, associated_metric_id, source_mode_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list, rules_store, lower_enabled_list, lower_value_list, upper_enabled_list, upper_value_list, tests, search, inventory_store):
         """Génère la prévisualisation JSON du test"""
         if not ttype:
             return "", False, ""
@@ -1086,41 +2723,128 @@ def register_build_callbacks(app):
             return val
         
         tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
-        # tid_raw is expected to be numeric or None. Format as T-### if present.
+        # Build prefix from context and format id if numeric provided
+        prefix = build_id_prefix_from_context(search, inventory_store, "test")
         tid = None
         try:
             if isinstance(tid_raw, (int, float)) or (isinstance(tid_raw, str) and str(tid_raw).isdigit()):
-                tid = f"T-{int(tid_raw):03d}"
+                tid = f"{prefix}{int(tid_raw)}"
         except Exception:
             tid = None
+        source_mode = first_with_default(source_mode_list, "database")
         db, col = first_with_default(db_list), first_with_default(col_list)
         metric = first_with_default(metric_list)
         low, high = first_with_default(low_list), first_with_default(high_list)
         pat = first_with_default(pat_list)
-        refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
+        lower_enabled = bool(first_with_default(lower_enabled_list, False))
+        upper_enabled = bool(first_with_default(upper_enabled_list, False))
+        lower_raw = first_with_default(lower_value_list)
+        upper_raw = first_with_default(upper_value_list)
+        rules_store = rules_store or []
 
+        def normalize_columns(value):
+            if value is None:
+                return []
+            if isinstance(value, (list, tuple, set)):
+                return [v for v in value if v not in (None, "")]
+            return [value] if value not in (None, "") else []
+        # Root should be limited: keep id/type for compatibility, move others into structured blocks
         obj = {
             "id": tid or "(auto)",
-            "type": ttype,
-            "severity": (sev or "medium"),
-            "sample_on_fail": ("yes" in (sof or []))
+            "type": ttype
         }
+
+        def prune_dict(block, keep_empty_lists=None):
+            keep_empty_lists = set(keep_empty_lists or [])
+            cleaned = {}
+            for key, value in (block or {}).items():
+                if isinstance(value, list):
+                    if not value and key not in keep_empty_lists:
+                        continue
+                    cleaned[key] = value
+                    continue
+                if isinstance(value, bool):
+                    cleaned[key] = value
+                    continue
+                if value in (None, "", {}, []):
+                    continue
+                cleaned[key] = value
+            return cleaned
+
+        nature_payload = prune_dict({
+            "name": nature_name or ttype or "",
+            "functional_category_1": func_cat1 or "",
+            "functional_category_2": func_cat2 or "",
+            "category": cat or "",
+            "description": desc or "",
+            "preliminary_comments": comments or ""
+        })
+        if nature_payload:
+            obj["nature"] = nature_payload
+        identification_payload = prune_dict({
+            "test_id": tid or "(auto)",
+            "control_name": control_name or "",
+            "control_id": control_id or "",
+            "associated_metric_id": associated_metric_id or ""
+        })
+        if identification_payload:
+            obj["identification"] = identification_payload
+        general_payload = {
+            "criticality": sev or "medium",
+            "on_fail": action_on_fail or "raise_alert",
+            "sample_on_fail": bool("yes" in (sof or []))
+        }
+        obj["general"] = general_payload
+
+        # Build specific block depending on type. Avoid polluting root with dataset/metric/columns/seuils
         if ttype == "range":
-            # Architecture unifiée: database peut être un nom normal OU virtual:M-XXX
             if metric:
-                # Convertir la métrique en virtual dataset
-                obj.update({"database": f"virtual:{metric}", "column": col or ""})
+                specific = {
+                    "target_mode": "metric_value",
+                    "metric_id": metric,
+                    "columns": normalize_columns(col),
+                    "low": low,
+                    "high": high,
+                    "inclusive": True
+                }
             else:
-                obj.update({"database": db or "", "column": col or ""})
-            
-            obj.update({"low": low, "high": high, "inclusive": True})
-        # If tid provided, check whether it's already used
+                specific = {
+                    "target_mode": "dataset_columns",
+                    "database": db or "",
+                    "columns": normalize_columns(col),
+                    "low": low,
+                    "high": high,
+                    "inclusive": True
+                }
+            obj["specific"] = prune_dict(specific, keep_empty_lists={"columns"})
+        elif ttype == "test.interval_check":
+            target_mode = "metric_value" if source_mode == "metric" else "dataset_columns"
+            lower_value = _cast_optional_number(lower_raw)
+            upper_value = _cast_optional_number(upper_raw)
+            column_rules = _normalize_interval_rules(rules_store)
+            specific = {
+                "target_mode": target_mode,
+                "metric_id": metric if target_mode == "metric_value" else None,
+                "database": db if target_mode == "dataset_columns" else None,
+                "columns": normalize_columns(col) if target_mode == "dataset_columns" else [],
+                "lower_enabled": lower_enabled,
+                "lower_value": lower_value,
+                "upper_enabled": upper_enabled,
+                "upper_value": upper_value,
+            }
+            if column_rules:
+                specific["column_rules"] = column_rules
+            obj["specific"] = prune_dict(specific, keep_empty_lists={"columns"})
+        # If tid provided, check whether it's already used for this prefix
         if tid:
             existing_ids = {x.get("id") for x in (tests or []) if x.get("id")}
             if tid in existing_ids:
                 msg = f"Le numéro {tid} est déjà utilisé. Un ID unique sera attribué automatiquement si nécessaire."
-                return json.dumps(obj, ensure_ascii=False, indent=2), True, msg
-        return json.dumps(obj, ensure_ascii=False, indent=2), False, ""
+                preview_obj = {k: obj[k] for k in ("nature", "identification", "general", "specific") if obj.get(k)}
+                return json.dumps(preview_obj, ensure_ascii=False, indent=2), True, msg
+
+        preview_obj = {k: obj[k] for k in ("nature", "identification", "general", "specific") if obj.get(k)}
+        return json.dumps(preview_obj, ensure_ascii=False, indent=2), False, ""
 
     @app.callback(
         Output("add-test-status", "children"),
@@ -1134,6 +2858,17 @@ def register_build_callbacks(app):
         State({"role": "test-id"}, "value", ALL),
         State({"role": "test-sev"}, "value", ALL),
         State({"role": "test-sof"}, "value", ALL),
+        State({"role": "test-action"}, "value"),
+    State({"role": "test-nature", "field": "name"}, "value"),
+    State({"role": "test-nature", "field": "functional_category_1"}, "value"),
+        State({"role": "test-nature", "field": "functional_category_2"}, "value"),
+        State({"role": "test-nature", "field": "category"}, "value"),
+        State({"role": "test-nature", "field": "description"}, "value"),
+        State({"role": "test-nature", "field": "comments"}, "value"),
+        State({"role": "test-identification", "field": "control_name"}, "value"),
+        State({"role": "test-identification", "field": "control_id"}, "value"),
+        State({"role": "test-identification", "field": "associated_metric_id"}, "value"),
+        State({"role": "test-source-type"}, "value", ALL),
         State({"role": "test-db"}, "value", ALL),
         State({"role": "test-col"}, "value", ALL),
         State({"role": "test-metric"}, "value", ALL),
@@ -1142,76 +2877,213 @@ def register_build_callbacks(app):
         State({"role": "test-pattern"}, "value", ALL),
         State({"role": "test-ref-db"}, "value", ALL),
         State({"role": "test-ref-col"}, "value", ALL),
+        State({"role": "interval-lower-enabled"}, "value", ALL),
+        State({"role": "interval-lower-value"}, "value", ALL),
+        State({"role": "interval-upper-enabled"}, "value", ALL),
+        State({"role": "interval-upper-value"}, "value", ALL),
+        State("interval-rules-store", "data"),
+        State("url", "search"),
+        State("inventory-datasets-store", "data"),
     )
-    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list):
+    def add_test(n, preview_list, tests, ttype, tid_list, sev_list, sof_list, action_on_fail, nature_name, func_cat1, func_cat2, cat, desc, comments, control_name, control_id, associated_metric_id, source_mode_list, db_list, col_list, metric_list, low_list, high_list, pat_list, refdb_list, refcol_list, lower_enabled_list, lower_value_list, upper_enabled_list, upper_value_list, rules_store, search, inventory_store):
         """Ajoute un test au store et met à jour la liste"""
         if not n:
             return "", tests, "", no_update
-        
+
         def first_with_default(val, default=None):
             if val is None:
                 return default
             if isinstance(val, list):
                 return val[0] if val else default
             return val
-        
+
+        def normalize_columns(value):
+            if value is None:
+                return []
+            if isinstance(value, (list, tuple, set)):
+                return [v for v in value if v not in (None, "")]
+            return [value] if value not in (None, "") else []
+
         preview_text = first_with_default(preview_list)
-        t = None
+        tid_raw = first_with_default(tid_list)
+        sev = first_with_default(sev_list, "medium")
+        sof_raw = first_with_default(sof_list, [])
+        source_mode = first_with_default(source_mode_list, "database")
+        db = first_with_default(db_list)
+        col = first_with_default(col_list)
+        metric = first_with_default(metric_list)
+        low = first_with_default(low_list)
+        high = first_with_default(high_list)
+        pat = first_with_default(pat_list)
+        lower_enabled = bool(first_with_default(lower_enabled_list, False))
+        upper_enabled = bool(first_with_default(upper_enabled_list, False))
+        lower_raw = first_with_default(lower_value_list)
+        upper_raw = first_with_default(upper_value_list)
+        interval_rules = _normalize_interval_rules(rules_store or [])
+
+        parsed_preview = {}
         if preview_text:
             try:
-                t = json.loads(preview_text)
+                candidate = json.loads(preview_text)
+                if isinstance(candidate, dict):
+                    parsed_preview = candidate
             except Exception:
-                t = None
-        if t is None:
-            if not ttype:
-                return "Prévisualisation vide/invalide.", tests, no_update, no_update
-            tid_raw, sev, sof = first_with_default(tid_list), first_with_default(sev_list, "medium"), first_with_default(sof_list, [])
-            db, col = first_with_default(db_list), first_with_default(col_list)
-            metric = first_with_default(metric_list)
-            low, high = first_with_default(low_list), first_with_default(high_list)
-            pat = first_with_default(pat_list)
-            refdb, refcol = first_with_default(refdb_list), first_with_default(refcol_list)
-            # Normalize tid input: accept numeric or T-<num>
-            t = {"id": None, "type": ttype, "severity": (sev or "medium"), "sample_on_fail": ("yes" in (sof or []))}
-            # Accept numeric tid_raw (int or numeric string). Otherwise leave None to auto-generate.
-            if tid_raw is not None and tid_raw != "":
-                try:
-                    tnum = int(tid_raw)
-                    t["id"] = f"T-{tnum:03d}"
-                except Exception:
-                    t["id"] = None
-            if ttype == "range":
-                # Architecture unifiée: database peut être un nom normal OU virtual:M-XXX
-                if metric:
-                    # Convertir la métrique en virtual dataset
-                    t.update({"database": f"virtual:{metric}", "column": col or ""})
-                else:
-                    t.update({"database": db or "", "column": col or ""})
-                
-                t.update({"low": low, "high": high, "inclusive": True})
+                parsed_preview = {}
+
+        def prune_dict(block, keep_empty_lists=None):
+            keep_empty_lists = set(keep_empty_lists or [])
+            cleaned = {}
+            for key, value in (block or {}).items():
+                if isinstance(value, list):
+                    if not value and key not in keep_empty_lists:
+                        continue
+                    cleaned[key] = value
+                    continue
+                if isinstance(value, bool):
+                    cleaned[key] = value
+                    continue
+                if value in (None, "", {}, []):
+                    continue
+                cleaned[key] = value
+            return cleaned
+
+        # Build prefix and format candidate id
+        prefix = build_id_prefix_from_context(search, inventory_store, "test")
+        formatted_tid = None
+        try:
+            if tid_raw not in (None, "") and (isinstance(tid_raw, (int, float)) or (isinstance(tid_raw, str) and str(tid_raw).isdigit())):
+                formatted_tid = f"{prefix}{int(tid_raw)}"
+        except Exception:
+            formatted_tid = None
+
+        if not ttype:
+            return "Prévisualisation vide/invalide.", tests, no_update, no_update
+
+        t = {
+            "id": formatted_tid,
+            "type": ttype
+        }
+
+        nature_payload = prune_dict({
+            "name": nature_name or parsed_preview.get("nature", {}).get("name") or "",
+            "functional_category_1": func_cat1 or parsed_preview.get("nature", {}).get("functional_category_1") or "",
+            "functional_category_2": func_cat2 or parsed_preview.get("nature", {}).get("functional_category_2") or "",
+            "category": cat or parsed_preview.get("nature", {}).get("category") or "",
+            "description": desc or parsed_preview.get("nature", {}).get("description") or "",
+            "preliminary_comments": comments or parsed_preview.get("nature", {}).get("preliminary_comments") or ""
+        })
+        if nature_payload:
+            t["nature"] = nature_payload
+
+        identification_payload = prune_dict({
+            "test_id": formatted_tid or parsed_preview.get("identification", {}).get("test_id"),
+            "control_name": control_name or parsed_preview.get("identification", {}).get("control_name") or "",
+            "control_id": control_id or parsed_preview.get("identification", {}).get("control_id") or "",
+            "associated_metric_id": associated_metric_id or parsed_preview.get("identification", {}).get("associated_metric_id") or ""
+        })
+        if identification_payload:
+            t["identification"] = identification_payload
+
+        sample_flag = bool("yes" in (sof_raw or []))
+        existing_general = parsed_preview.get("general", {}) if isinstance(parsed_preview.get("general"), dict) else {}
+        general_payload = {
+            "criticality": sev or existing_general.get("criticality") or "medium",
+            "on_fail": action_on_fail or existing_general.get("on_fail") or "raise_alert",
+            "sample_on_fail": sample_flag
+        }
+        t["general"] = general_payload
+
+        specific_payload = {}
+        if ttype == "range":
+            if metric:
+                specific_payload = {
+                    "target_mode": "metric_value",
+                    "metric_id": metric,
+                    "columns": normalize_columns(col),
+                    "low": low,
+                    "high": high,
+                    "inclusive": True
+                }
+            else:
+                specific_payload = {
+                    "target_mode": "dataset_columns",
+                    "database": db or "",
+                    "columns": normalize_columns(col),
+                    "low": low,
+                    "high": high,
+                    "inclusive": True
+                }
+            specific_payload = prune_dict(specific_payload, keep_empty_lists={"columns"})
+        elif ttype == "regex":
+            specific_payload = prune_dict({
+                "target_mode": "metric_value" if metric else "dataset_columns",
+                "metric_id": metric if metric else None,
+                "database": db or None,
+                "column": col or None,
+                "pattern": pat or None
+            })
+        elif ttype == "test.interval_check":
+            target_mode = "metric_value" if source_mode == "metric" else "dataset_columns"
+            columns = normalize_columns(col)
+            lower_value = _cast_optional_number(lower_raw)
+            upper_value = _cast_optional_number(upper_raw)
+            specific_payload = prune_dict({
+                "target_mode": target_mode,
+                "metric_id": metric if target_mode == "metric_value" else None,
+                "database": db if target_mode == "dataset_columns" else None,
+                "columns": columns if target_mode == "dataset_columns" else [],
+                "lower_enabled": lower_enabled,
+                "lower_value": lower_value,
+                "upper_enabled": upper_enabled,
+                "upper_value": upper_value,
+            }, keep_empty_lists={"columns"})
+            column_rules_from_preview = parsed_preview.get("specific", {}).get("column_rules") if isinstance(parsed_preview.get("specific"), dict) else None
+            # Ensure we keep column_rules even if the rest of the specific payload was pruned to empty
+            if interval_rules or column_rules_from_preview:
+                if not isinstance(specific_payload, dict):
+                    specific_payload = {}
+                # prefer dynamic interval_rules (from UI) over previewed column_rules
+                specific_payload["column_rules"] = interval_rules if interval_rules else column_rules_from_preview
+        else:
+            specific_payload = prune_dict(parsed_preview.get("specific")) if isinstance(parsed_preview.get("specific"), dict) else {}
+
+        if specific_payload:
+            t["specific"] = specific_payload
         
         tests = (tests or [])
         existing_ids = {x.get("id") for x in tests}
-        
-        # Générer un ID unique au format T-XXX
-        if not t.get("id") or t.get("id") in existing_ids:
-            existing_numbers = []
-            for test in tests:
-                test_id = str(test.get("id", ""))
-                m_match = re.match(r"^T-(\d+)$", test_id)
-                if m_match:
-                    try:
-                        num = int(m_match.group(1))
-                        existing_numbers.append(num)
-                    except (ValueError, IndexError):
-                        pass
 
-            # Trouver le prochain numéro disponible
+        # Decide final ID: if candidate provided and unique, use it; otherwise compute next available numeric suffix for this prefix
+        if formatted_tid and formatted_tid not in existing_ids:
+            t["id"] = formatted_tid
+        else:
+            existing_numbers = []
+            try:
+                pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+                for test in tests:
+                    test_id = str(test.get("id", ""))
+                    m_match = pattern.match(test_id)
+                    if m_match:
+                        try:
+                            num = int(m_match.group(1))
+                            existing_numbers.append(num)
+                        except (ValueError, IndexError):
+                            pass
+            except Exception:
+                existing_numbers = []
+
             next_num = 1
             while next_num in existing_numbers:
                 next_num += 1
 
-            t["id"] = f"T-{next_num:03d}"
+            t["id"] = f"{prefix}{next_num}"
+
+        if t.get("identification"):
+            ident_block = dict(t["identification"])
+        else:
+            ident_block = {}
+        ident_block["test_id"] = t.get("id")
+        t["identification"] = ident_block
         
         tests.append(t)
         items = [
@@ -1231,13 +3103,21 @@ def register_build_callbacks(app):
         Input("store_metrics", "data"),
         Input("store_tests", "data"),
         Input("fmt", "value"),
-        State("url", "search")
+        State("url", "search"),
+        State("run-context-store", "data")
     )
-    def render_cfg_preview(datasets, metrics, tests, fmt, search):
+    def render_cfg_preview(datasets, metrics, tests, fmt, search, run_context):
         """Génère la prévisualisation de la configuration finale"""
         q = parse_query(search or "")
         cfg = cfg_template()
-        cfg["context"] = {"stream": q.get("stream"), "project": q.get("project")}
+        run_ctx_data = run_context or {}
+        context_quarter = run_ctx_data.get("quarter") or q.get("quarter")
+        cfg["context"] = {
+            "quarter": context_quarter,
+            "stream": q.get("stream"),
+            "project": q.get("project")
+        }
+        cfg["run_context"] = run_ctx_data
         cfg["databases"] = datasets or []
         cfg["metrics"] = sanitize_metrics(metrics or [])
         cfg["tests"] = sanitize_tests(tests or [])
@@ -1310,6 +3190,7 @@ def register_build_callbacks(app):
             html.Th("Colonne"),
             html.Th("Sévérité"),
             html.Th("Range"),
+            html.Th("Description"),
             html.Th("Échantillon"),
             html.Th("Actions", style={"width": "200px"})
         ])
@@ -1318,20 +3199,65 @@ def register_build_callbacks(app):
         for idx, t in enumerate(tests):
             test_id = t.get("id", "N/A")
             
-            # Déterminer la source (database/column OU metric)
-            if t.get("metric"):
-                source_info = f"📊 {t.get('metric')}"
-                column_info = "-"
+            # Déterminer la source (préférer bloc 'specific' si présent)
+            spec = t.get("specific") or {}
+            if spec:
+                mode = spec.get("target_mode")
+                if mode == "metric_value":
+                    metric_id = spec.get("metric_id") or t.get("metric") or "-"
+                    source_info = f"📊 {metric_id}"
+                    column_info = "-"
+                else:
+                    database = spec.get("database") or t.get("database") or "-"
+                    cols = spec.get("columns") or t.get("columns") or []
+                    if isinstance(cols, (list, tuple, set)):
+                        cols_display = ", ".join(str(c) for c in cols if c not in (None, "")) or "-"
+                    else:
+                        cols_display = str(cols) if cols else "-"
+                    source_info = database
+                    column_info = cols_display
             else:
-                source_info = t.get("database", "-")
-                column_info = t.get("column", "-")
+                # Legacy fallback
+                if t.get("metric"):
+                    source_info = f"📊 {t.get('metric')}"
+                    column_info = "-"
+                else:
+                    source_info = t.get("database", "-")
+                    column_info = t.get("column", "-")
             
             # Extraire low/high pour les tests range
             range_info = "-"
             if t.get("type") == "range":
-                low_val = t.get("low", "?")
-                high_val = t.get("high", "?")
+                # Prefer specific block
+                spec = t.get("specific") or {}
+                low_val = spec.get("low") if spec.get("low") is not None else t.get("low", "?")
+                high_val = spec.get("high") if spec.get("high") is not None else t.get("high", "?")
                 range_info = f"[{low_val}, {high_val}]"
+            elif t.get("type") == "test.interval_check":
+                spec = t.get("specific") or {}
+                mode = spec.get("target_mode") or t.get("mode")
+                if mode == "metric_value":
+                    metric_id = spec.get("metric_id") or t.get("metric") or "-"
+                    source_info = f"📊 {metric_id}"
+                    column_info = "-"
+                else:
+                    database = spec.get("database") or t.get("database") or "-"
+                    cols = spec.get("columns") or t.get("columns") or []
+                    if isinstance(cols, (list, tuple, set)):
+                        cols_display = ", ".join(str(c) for c in cols if c not in (None, "")) or "-"
+                    else:
+                        cols_display = str(cols) if cols else "-"
+                    source_info = database
+                    column_info = cols_display
+
+                lower_enabled = spec.get("lower_enabled")
+                upper_enabled = spec.get("upper_enabled")
+                lower_val = spec.get("lower_value") if lower_enabled else None
+                upper_val = spec.get("upper_value") if upper_enabled else None
+                if lower_val is not None or upper_val is not None:
+                    lower_display = lower_val if lower_val is not None else "-∞"
+                    upper_display = upper_val if upper_val is not None else "+∞"
+                    range_info = f"[{lower_display}, {upper_display}]"
             
             actions = html.Div([
                 dbc.Button(
@@ -1359,14 +3285,21 @@ def register_build_callbacks(app):
                 )
             ])
             
+            description = generate_test_description(t)
+
+            general_block = t.get("general") or {}
+            sample_flag = general_block.get("sample_on_fail") if isinstance(general_block, dict) else False
+            severity_display = general_block.get("criticality") if isinstance(general_block, dict) else t.get("severity")
+
             row = html.Tr([
                 html.Td(test_id),
                 html.Td(t.get("type", "N/A")),
                 html.Td(source_info),
                 html.Td(column_info),
-                html.Td(t.get("severity", "-")),
+                html.Td(severity_display or "-"),
                 html.Td(range_info),
-                html.Td("Oui" if t.get("sample_on_fail") else "Non"),
+                html.Td(description),
+                html.Td("Oui" if sample_flag else "Non"),
                 html.Td(actions)
             ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
             table_rows.append(row)
@@ -1567,17 +3500,31 @@ def register_build_callbacks(app):
         threshold = test.get("threshold", {})
         ref = test.get("ref", {})
         
+        general_block = test.get("general") or {}
         values_list = [
             html.Li(f"Type: {test.get('type', 'N/A')}"),
             html.Li(f"ID: {test.get('id', 'N/A')}"),
-            html.Li(f"Sévérité: {test.get('severity', 'medium')}"),
-            html.Li(f"Échantillon si échec: {'Oui' if test.get('sample_on_fail') else 'Non'}"),
+            html.Li(f"Sévérité: {general_block.get('criticality', test.get('severity', 'medium'))}"),
+            html.Li(f"Échantillon si échec: {'Oui' if general_block.get('sample_on_fail') else 'Non'}"),
         ]
         
-        if test.get('database'):
-            values_list.append(html.Li(f"Database: {test.get('database')}"))
-        if test.get('column'):
-            values_list.append(html.Li(f"Colonne: {test.get('column')}"))
+        specific_block = test.get("specific") or {}
+        if specific_block.get('target_mode') == 'metric_value':
+            metric_id = specific_block.get('metric_id') or test.get('metric')
+            if metric_id:
+                values_list.append(html.Li(f"Métrique: {metric_id}"))
+        else:
+            database_val = specific_block.get('database') or test.get('database')
+            columns_val = specific_block.get('columns') or test.get('column')
+            if database_val:
+                values_list.append(html.Li(f"Database: {database_val}"))
+            if columns_val:
+                if isinstance(columns_val, (list, tuple, set)):
+                    cols_str = ", ".join(str(c) for c in columns_val if c)
+                else:
+                    cols_str = str(columns_val)
+                if cols_str:
+                    values_list.append(html.Li(f"Colonnes: {cols_str}"))
         if threshold:
             values_list.append(html.Li(f"Seuil: {threshold.get('op', '')} {threshold.get('value', '')}"))
         if test.get('min') is not None:

@@ -18,7 +18,7 @@ def dq_landing_page():
                 dbc.CardHeader("🔧 Builder"),
                 dbc.CardBody([
                     html.P("Créer et configurer des métriques / tests (wizard)."),
-                    dbc.Button("Ouvrir Builder", href="/select-stream", color="primary")
+                    dbc.Button("Ouvrir Builder", href="/select-quarter", color="primary")
                 ])
             ]), md=4),
             dbc.Col(dbc.Card([
