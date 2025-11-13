@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 
 import pandas as pd
 from pydantic import BaseModel, Field, ConfigDict
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from src.core.ui_meta import UIMeta
 from src.plugins.base import BasePlugin, Result, register
 from src.plugins.base_models import CommonArgs
+from src.plugins.investigation_helpers import build_investigation_result
 
 
 class IntervalColumnRule(BaseModel):
@@ -161,7 +162,7 @@ class IntervalCheckParams(CommonArgs):
 
 @register
 class IntervalCheck(BasePlugin):
-    plugin_id = "test.interval_check"
+    plugin_id = "interval_check"
     label = "Interval Check"
     group = "Validation"
     ParamsModel = IntervalCheckParams
@@ -401,4 +402,207 @@ class IntervalCheck(BasePlugin):
                 "non_numeric_columns": non_numeric_columns,
                 "skipped_columns": skipped_columns,
             },
+        )
+    
+    def investigate(
+        self, 
+        context, 
+        df: pd.DataFrame, 
+        params: Dict[str, Any],
+        max_samples: int = 100
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Génère un échantillon de données problématiques pour interval_check.
+        
+        Stratégie selon le mode :
+        - metric_value : Remonte au dataset source de la métrique et échantillonne
+          selon le type de métrique (ex: missing_rate → lignes avec missing)
+        - dataset_columns : Échantillonne les valeurs hors limites directement
+        
+        Args:
+            context: Context d'exécution avec datasets et métriques
+            df: DataFrame (non utilisé directement en mode metric_value)
+            params: Paramètres du test
+            max_samples: Nombre max de lignes à échantillonner
+        
+        Returns:
+            Dict avec sample_df, description, etc. ou None
+        """
+        try:
+            spec = self.ParamsModel(**params).specific
+            mode = (spec.target_mode or "").strip() or "metric_value"
+            
+            if mode == "metric_value":
+                return self._investigate_metric_value(context, spec, params, max_samples)
+            elif mode == "dataset_columns":
+                return self._investigate_dataset_columns(context, spec, params, max_samples)
+            else:
+                return None
+        
+        except Exception:
+            # En cas d'erreur, pas d'investigation
+            return None
+    
+    def _investigate_metric_value(
+        self,
+        context,
+        spec: IntervalSpecific,
+        params: Dict[str, Any],
+        max_samples: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Investigation pour mode metric_value.
+        
+        Remonte au dataset source de la métrique et échantillonne selon le type.
+        """
+        metric_id = (spec.metric_id or "").strip()
+        if not metric_id:
+            return None
+        
+        # Récupérer les détails de la métrique depuis le context
+        metrics_details = getattr(context, "metrics_details", {})
+        if not isinstance(metrics_details, dict):
+            return None
+        
+        metric_detail = metrics_details.get(metric_id)
+        if not isinstance(metric_detail, dict):
+            return None
+        
+        # Extraire les informations de la métrique
+        # Pour missing_rate, on a : per_column, total_rows, overall_rate
+        per_column = metric_detail.get("per_column", {})
+        
+        # Déterminer le type de métrique (on suppose missing_rate pour l'instant)
+        # TODO: Généraliser pour d'autres types de métriques
+        metric_type = "missing_rate"  # Inféré depuis le context ou params
+        
+        # Récupérer le dataset source
+        # Pour missing_rate, le dataset est stocké dans params de la métrique
+        # On doit le retrouver via context.datasets
+        
+        # Chercher le dataset dans les datasets chargés
+        # La métrique stocke le nom du dataset dans ses params
+        dataset_alias = None
+        
+        # Parser le metric_id pour extraire le dataset
+        # Format: stream.project.zone.metric.missing_rate.dataset_alias...
+        metric_id_parts = metric_id.split(".")
+        if len(metric_id_parts) >= 6:
+            dataset_alias = metric_id_parts[5]
+        
+        if not dataset_alias or dataset_alias not in context.datasets:
+            return None
+        
+        df_source = context.datasets[dataset_alias]
+        
+        # Pour missing_rate : échantillonner les lignes avec valeurs manquantes
+        if metric_type == "missing_rate":
+            # Trouver les colonnes avec missing
+            columns_with_missing = []
+            for col_key, value in per_column.items():
+                if col_key.endswith("_missing_number"):
+                    col_name = col_key.replace("_missing_number", "")
+                    missing_count = value
+                    if missing_count > 0 and col_name in df_source.columns:
+                        columns_with_missing.append(col_name)
+            
+            if not columns_with_missing:
+                return None
+            
+            # Filtrer les lignes avec au moins une valeur manquante dans ces colonnes
+            mask = pd.Series(False, index=df_source.index)
+            for col in columns_with_missing:
+                mask |= df_source[col].isna()
+            
+            problematic_df = df_source[mask]
+            
+            if len(problematic_df) == 0:
+                return None
+            
+            sample_df = problematic_df.head(max_samples)
+            
+            test_id = params.get('id', 'interval_check')
+            
+            # Récupérer les bornes testées
+            lower = spec.lower_value if spec.lower_enabled else None
+            upper = spec.upper_value if spec.upper_enabled else None
+            bounds_str = f"[{lower}, {upper}]"
+            
+            return build_investigation_result(
+                df=problematic_df,
+                sample_df=sample_df,
+                description=f"Lignes avec valeurs manquantes (métrique '{metric_id}' hors limites {bounds_str})",
+                test_id=test_id,
+                suffix="missing_values_metric",
+                metric_id=metric_id,
+                dataset_source=dataset_alias,
+                columns_with_missing=columns_with_missing,
+                bounds={"lower": lower, "upper": upper}
+            )
+        
+        return None
+    
+    def _investigate_dataset_columns(
+        self,
+        context,
+        spec: IntervalSpecific,
+        params: Dict[str, Any],
+        max_samples: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Investigation pour mode dataset_columns.
+        
+        Échantillonne les lignes avec valeurs hors limites.
+        """
+        database = (spec.database or "").strip()
+        if not database:
+            return None
+        
+        # Charger le dataset
+        df_source = context.load(database)
+        
+        # Récupérer les bornes
+        lower = spec.lower_value if spec.lower_enabled else None
+        upper = spec.upper_value if spec.upper_enabled else None
+        
+        if lower is None and upper is None:
+            return None
+        
+        selected_columns = [col for col in (spec.columns or []) if col]
+        if not selected_columns:
+            return None
+        
+        # Filtrer les lignes hors limites
+        mask = pd.Series(False, index=df_source.index)
+        
+        for col in selected_columns:
+            if col not in df_source.columns:
+                continue
+            
+            numeric_series = pd.to_numeric(df_source[col], errors='coerce')
+            
+            if lower is not None:
+                mask |= numeric_series < lower
+            if upper is not None:
+                mask |= numeric_series > upper
+        
+        problematic_df = df_source[mask]
+        
+        if len(problematic_df) == 0:
+            return None
+        
+        sample_df = problematic_df.head(max_samples)
+        
+        test_id = params.get('id', 'interval_check')
+        bounds_str = f"[{lower}, {upper}]"
+        
+        return build_investigation_result(
+            df=problematic_df,
+            sample_df=sample_df,
+            description=f"Valeurs hors limites {bounds_str} dans {', '.join(selected_columns)}",
+            test_id=test_id,
+            suffix="out_of_bounds_columns",
+            database=database,
+            columns=selected_columns,
+            bounds={"lower": lower, "upper": upper}
         )

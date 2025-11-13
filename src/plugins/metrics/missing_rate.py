@@ -246,7 +246,14 @@ class MissingRate(BasePlugin):
         #    NB: on ne filtre PAS le DF ici (ton exécution de filtre est gérée ailleurs),
         #    on se contente de valider + tracer. Si tu veux appliquer le filtre réellement,
         #    branche ta fonction d'application de filtre ici, après validation.
-        total_rows = df.count()
+        
+        # Détection du type de DataFrame (Pandas vs Spark)
+        is_pandas = isinstance(df, pd.DataFrame)
+        
+        if is_pandas:
+            total_rows = len(df)
+        else:
+            total_rows = df.count()
 
         if total_rows == 0:
             result_map = {}
@@ -254,40 +261,53 @@ class MissingRate(BasePlugin):
                 result_map[f"{c}_missing_rate"] = 0.0
                 result_map[f"{c}_missing_number"] = 0
         else:
-            agg_alias_map = {}
-            agg_exprs = []
-            schema_map = {field.name: field for field in df.schema.fields}
-            for c in target_columns:
-                field = schema_map.get(c)
-                if field is None:
-                    continue
-                cond = self._missing_condition(c, field)
-                alias = f"__{c}__missing_number"
-                agg_alias_map[c] = alias
-                agg_exprs.append(F.sum(F.when(cond, 1).otherwise(0)).alias(alias))
-
-            agg_result = {}
-            if agg_exprs:
-                agg_row = df.agg(*agg_exprs).collect()[0]
-                agg_result = agg_row.asDict(recursive=True)
-
             result_map = {}
-            for c in target_columns:
-                alias = agg_alias_map.get(c)
-                missing_number = int(agg_result.get(alias, 0)) if alias else 0
-                missing_rate = float(missing_number) / total_rows if total_rows else 0.0
-                result_map[f"{c}_missing_number"] = missing_number
-                result_map[f"{c}_missing_rate"] = missing_rate
+            if is_pandas:
+                # Version Pandas
+                for c in target_columns:
+                    if c not in df.columns:
+                        continue
+                    # Compter les valeurs manquantes (null, None, NaN, chaînes vides)
+                    missing_mask = df[c].isna() | (df[c] == "") | (df[c] == " ")
+                    missing_number = missing_mask.sum()
+                    missing_rate = float(missing_number) / total_rows if total_rows else 0.0
+                    result_map[f"{c}_missing_number"] = int(missing_number)
+                    result_map[f"{c}_missing_rate"] = missing_rate
+            else:
+                # Version Spark (original)
+                agg_alias_map = {}
+                agg_exprs = []
+                schema_map = {field.name: field for field in df.schema.fields}
+                for c in target_columns:
+                    field = schema_map.get(c)
+                    if field is None:
+                        continue
+                    cond = self._missing_condition(c, field)
+                    alias = f"__{c}__missing_number"
+                    agg_alias_map[c] = alias
+                    agg_exprs.append(F.sum(F.when(cond, 1).otherwise(0)).alias(alias))
+
+                agg_result = {}
+                if agg_exprs:
+                    agg_row = df.agg(*agg_exprs).collect()[0]
+                    agg_result = agg_row.asDict(recursive=True)
+
+                for c in target_columns:
+                    alias = agg_alias_map.get(c)
+                    missing_number = int(agg_result.get(alias, 0)) if alias else 0
+                    missing_rate = float(missing_number) / total_rows if total_rows else 0.0
+                    result_map[f"{c}_missing_number"] = missing_number
+                    result_map[f"{c}_missing_rate"] = missing_rate
 
         # 4) Stockage pour tests post-métrique (threshold, etc.)
-        primary_column = target_columns[0] if target_columns else None
-        metric_id = _build_metric_id(
+        # Utiliser l'ID fourni dans les paramètres (clé du dictionnaire YAML)
+        metric_id = p.id if p.id else _build_metric_id(
             "missing_rate",
             stream=p.specific.stream,
             project=p.specific.project,
             zone=p.specific.zone,
             dataset=ds,
-            column=primary_column,
+            column=target_columns[0] if target_columns else None,
             filter_name=flt,
         )
         # 5) Résultat

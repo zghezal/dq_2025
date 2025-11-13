@@ -1,0 +1,44 @@
+================================================================================
+RAPPORT D'INVESTIGATION DQ
+================================================================================
+Date: 2025-11-08 16:55:24
+Nombre de tests investigués: 4
+
+
+1. Test: test_name_quality
+--------------------------------------------------------------------------------
+   Type de métrique: missing_rate
+   Valeur métrique: 0.2
+   Description: Lignes avec valeurs manquantes dans la colonne 'name'
+   Lignes problématiques: 10
+   Échantillon: 10 lignes
+   Fichier: reports\investigations\test_name_quality_missing_values_20251108_165524.csv
+
+2. Test: test_email_quality
+--------------------------------------------------------------------------------
+   Type de métrique: missing_rate
+   Valeur métrique: 0.14
+   Description: Lignes avec valeurs manquantes dans la colonne 'email'
+   Lignes problématiques: 7
+   Échantillon: 7 lignes
+   Fichier: reports\investigations\test_email_quality_missing_values_20251108_165524.csv
+
+3. Test: test_no_invalid_ages
+--------------------------------------------------------------------------------
+   Type de métrique: count_where
+   Valeur métrique: 5
+   Description: Lignes respectant la condition: age < 0
+   Lignes correspondantes: 5
+   Condition: age < 0
+   Échantillon: 5 lignes
+   Fichier: reports\investigations\test_no_invalid_ages_condition_matches_20251108_165524.csv
+
+4. Test: test_no_zero_revenues
+--------------------------------------------------------------------------------
+   Type de métrique: count_where
+   Valeur métrique: 16
+   Description: Lignes respectant la condition: revenue == 0
+   Lignes correspondantes: 16
+   Condition: revenue == 0
+   Échantillon: 16 lignes
+   Fichier: reports\investigations\test_no_zero_revenues_condition_matches_20251108_165524.csv

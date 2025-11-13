@@ -5,6 +5,7 @@ context:
   project: "P1"
   zone: "raw"
   dq_point: "quality_check"
+  quarter: "2025Q4"
 databases:
   - alias: "sales_2024"
   - alias: "customers"
@@ -18,8 +19,9 @@ tests:
   range_missing_rate:
     type: "interval_check"
     specific:
-      value_from_metric: "missing_rate_sales"
-      target_mode: "metric"
-      bounds:
-        lower: 0.0
-        upper: 0.2
+      metric_id: "missing_rate_sales"
+      target_mode: "metric_value"
+      lower_enabled: true
+      lower_value: 0.0
+      upper_enabled: true
+      upper_value: 0.2

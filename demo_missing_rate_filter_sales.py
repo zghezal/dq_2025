@@ -36,16 +36,15 @@ if not out1["blocked"] and out1["metric_result"]:
 if not out2["blocked"] and out2["metric_result"]:
     print("MR (quantity==10 on 'quantity'):", out2["metric_result"].value)
 
-
-
-from src.plugins.tests.threshold_test import ThresholdTest
-
-metric_id = "streamA.p1.raw.metric.missing_rate.sales_2024.col=quantity.filter=quantity_eq_10"
-t = ThresholdTest()
-tres = t.run(
-    context,
-    specific={"metric_id": metric_id, "min_value": 0.0, "max_value": 0.2},
-    id="T-threshold-1",
-    label="Threshold on MR"
-)
-print("threshold:", tres.passed, tres.message)
+# Note: interval_check plugin is the authorized test for threshold validation
+# Example: using interval_check to validate missing_rate is within bounds
+# from src.plugins.tests.interval_check import IntervalCheck
+# metric_id = "streamA.p1.raw.metric.missing_rate.sales_2024.col=quantity.filter=quantity_eq_10"
+# t = IntervalCheck()
+# tres = t.run(
+#     context,
+#     specific={"metric_id": metric_id, "lower": 0.0, "upper": 0.2},
+#     id="T-interval-1",
+#     label="Interval check on MR"
+# )
+# print("interval_check:", tres.passed, tres.message)

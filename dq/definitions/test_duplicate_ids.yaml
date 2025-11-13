@@ -1,0 +1,62 @@
+id: "test_duplicate_ids"
+label: "Test Configuration with Duplicate IDs"
+version: "1.0"
+
+context:
+  stream: "test"
+  project: "test_project"
+  zone: "bronze"
+  dq_point: "validation"
+  quarter: "2025Q2"
+
+globals:
+  owner: "test_owner"
+  export: true
+
+databases: []
+
+metrics:
+  M_001_test:
+    type: "missing_rate"
+    identification:
+      metric_id: "M_001_test"
+    nature:
+      name: "Test metric 1"
+    general:
+      owner: "test"
+    specific:
+      dataset: "test_data"
+      column: "col1"
+  
+  # ❌ DOUBLON - Même clé que la métrique ci-dessus
+  # Note: YAML écrase silencieusement la première valeur
+  M_001_test:
+    type: "row_count"
+    identification:
+      metric_id: "M_001_test"
+    nature:
+      name: "Test metric 2 (DUPLICATE KEY)"
+    general:
+      owner: "test"
+    specific:
+      dataset: "test_data"
+
+tests:
+  # ❌ COLLISION - Même ID qu'une métrique
+  M_001_test:
+    type: "interval_check"
+    identification:
+      test_id: "M_001_test"
+      control_name: "Test with same ID as metric"
+      control_id: "CTRL_001"
+    nature:
+      name: "Collision test"
+      category: "consistency"
+    general:
+      severity: "high"
+      stop_on_failure: false
+      action_on_fail: "alert"
+    specific:
+      bounds:
+        lower: 0
+        upper: 1

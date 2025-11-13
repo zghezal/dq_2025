@@ -1,0 +1,82 @@
+id: dq_customers_channel
+description: Contrôles qualité pour le canal clients (DÉSACTIVÉ - plugins manquants)
+context:
+  stream: "channel_stream"
+  project: "customers_channel"
+  zone: "validation"
+  dq_point: "channel_check"
+  quarter: "2025Q3"
+databases:
+  - alias: "customers"
+# ATTENTION: Ce fichier utilise des plugins non implémentés (count, nunique, count_where, threshold)
+# Il sera réactivé quand ces plugins seront disponibles
+metrics:
+  # Seule métrique utilisable avec les plugins actuels
+  email_missing_rate:
+    type: missing_rate
+    specific:
+      dataset: customers
+      column: email
+    description: Taux d'emails manquants
+  age_missing_rate:
+    type: missing_rate
+    specific:
+      dataset: customers
+      column: age
+    description: Taux d'âges manquants
+  # TODO: Réactiver quand les plugins seront implémentés
+  # customers_count:
+  #   type: count
+  #   specific:
+  #     dataset: customers
+  #   description: Nombre de clients
+  # invalid_ages:
+  #   type: count_where
+  #   specific:
+  #     dataset: customers
+  #     filter: age < 0 OR age > 120
+  #   description: Nombre d'âges invalides
+  # unique_emails:
+  #   type: nunique
+  #   specific:
+  #     dataset: customers
+  #     column: email
+  #   description: Nombre d'emails uniques
+tests:
+  test_email_quality:
+    type: interval_check
+    specific:
+      metric_id: email_missing_rate
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0.0
+      upper_enabled: true
+      upper_value: 0.15
+    description: Max 15% d'emails manquants
+  test_age_quality:
+    type: interval_check
+    specific:
+      metric_id: age_missing_rate
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0.0
+      upper_enabled: true
+      upper_value: 0.10
+    description: Max 10% d'âges manquants
+  # TODO: Réactiver quand le plugin 'threshold' sera implémenté
+  # test_no_invalid_age:
+  #   type: threshold
+  #   specific:
+  #     metric: invalid_ages
+  #     operator: <=
+  #     value: 5
+  #     severity: warning
+  #   description: Max 5 âges invalides tolérés
+  # test_min_customers:
+  #   type: threshold
+  #   specific:
+  #     metric: customers_count
+  #     operator: '>='
+  #     value: 100
+  #     severity: error
+  #   description: Au moins 100 clients attendus

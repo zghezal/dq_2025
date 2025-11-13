@@ -33,6 +33,7 @@ class Result(BaseModel):
         dataframe: DataFrame produit par la métrique (optionnel)
         message: Message descriptif du résultat
         meta: Métadonnées additionnelles (params utilisés, timestamps, etc.)
+        investigation: Échantillon de données problématiques (si test échoué et investigate=True)
     """
     passed: Optional[bool] = Field(
         default=None,
@@ -53,6 +54,10 @@ class Result(BaseModel):
     meta: Dict[str, Any] = Field(
         default_factory=dict,
         description="Métadonnées additionnelles"
+    )
+    investigation: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Échantillon de données problématiques si le test échoue"
     )
     
     class Config:
@@ -147,6 +152,65 @@ class BasePlugin:
             NotImplementedError: Si non implémenté (classe abstraite)
         """
         raise NotImplementedError(f"{self.__class__.__name__}.run() doit être implémenté")
+    
+    def investigate(
+        self, 
+        context, 
+        df: pd.DataFrame, 
+        params: Dict[str, Any],
+        max_samples: int = 100
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Génère un échantillon de données problématiques pour investigation.
+        
+        Cette méthode est appelée automatiquement par l'executor quand un test échoue
+        (passed=False) et que investigate=True. Elle permet d'identifier les lignes
+        responsables de l'échec du test.
+        
+        Args:
+            context: Objet Context qui donne accès aux datasets et métriques
+            df: DataFrame source sur lequel le test a été exécuté
+            params: Paramètres du plugin (dict brut, pas encore validé par ParamsModel)
+            max_samples: Nombre maximum de lignes à échantillonner (défaut: 100)
+        
+        Returns:
+            Dict contenant:
+            - sample_df: pd.DataFrame avec l'échantillon de lignes problématiques
+            - description: str décrivant le problème détecté
+            - total_problematic_rows: int nombre total de lignes problématiques
+            - sample_size: int nombre de lignes dans l'échantillon
+            - sample_file: str chemin du fichier CSV sauvegardé
+            - ... autres métadonnées spécifiques au plugin
+            
+            Retourne None si:
+            - Le plugin ne supporte pas l'investigation
+            - Aucune ligne problématique n'est trouvée
+            - Une erreur empêche l'investigation
+        
+        Note:
+            Par défaut retourne None (pas d'investigation).
+            Les plugins peuvent override cette méthode pour implémenter leur logique
+            d'investigation spécifique.
+        
+        Exemple:
+            def investigate(self, context, df, params, max_samples=100):
+                # Filtrer les lignes problématiques
+                problematic = df[df['value'] < 0]
+                if len(problematic) == 0:
+                    return None
+                
+                sample = problematic.head(max_samples)
+                file_path = save_sample(sample, "negative_values")
+                
+                return {
+                    "sample_df": sample,
+                    "description": "Lignes avec valeurs négatives",
+                    "total_problematic_rows": len(problematic),
+                    "sample_size": len(sample),
+                    "sample_file": str(file_path)
+                }
+        """
+        return None  # Par défaut: pas d'investigation
     
     @classmethod
     def create_virtual_dataset(cls, metric_id: str, params: Dict[str, Any]) -> Optional[VirtualDataset]:

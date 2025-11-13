@@ -1,0 +1,80 @@
+id: dq_sales_channel
+description: Contrôles qualité pour le canal des ventes (DÉSACTIVÉ - plugins manquants)
+context:
+  stream: "channel_stream"
+  project: "sales_channel"
+  zone: "validation"
+  dq_point: "channel_check"
+  quarter: "2025Q4"
+databases:
+  - alias: "sales"
+# ATTENTION: Ce fichier utilise des plugins non implémentés (count, avg, min, count_where, threshold, range)
+# Il sera réactivé quand ces plugins seront disponibles
+metrics:
+  # Seule métrique utilisable avec les plugins actuels
+  amount_missing_rate:
+    type: missing_rate
+    specific:
+      dataset: sales
+      column: amount
+    description: Taux de valeurs manquantes dans amount
+  # TODO: Réactiver quand les plugins seront implémentés
+  # sales_count:
+  #   type: count
+  #   specific:
+  #     dataset: sales
+  #   description: Nombre total de ventes
+  # amount_avg:
+  #   type: avg
+  #   specific:
+  #     dataset: sales
+  #     column: amount
+  #   description: Montant moyen des ventes
+  # amount_min:
+  #   type: min
+  #   specific:
+  #     dataset: sales
+  #     column: amount
+  #   description: Montant minimum
+  # negative_amounts:
+  #   type: count_where
+  #   specific:
+  #     dataset: sales
+  #     filter: amount < 0
+  #   description: Nombre de montants négatifs
+tests:
+  test_no_missing_amount:
+    type: interval_check
+    specific:
+      metric_id: amount_missing_rate
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0.0
+      upper_enabled: true
+      upper_value: 0.0
+    description: Aucune valeur manquante autorisée dans amount
+  # TODO: Réactiver quand les plugins 'threshold' et 'range' seront implémentés
+  # test_min_records:
+  #   type: threshold
+  #   specific:
+  #     metric: sales_count
+  #     operator: '>='
+  #     value: 50
+  #     severity: error
+  #   description: Au moins 50 ventes attendues
+  # test_no_negative:
+  #   type: threshold
+  #   specific:
+  #     metric: negative_amounts
+  #     operator: ==
+  #     value: 0
+  #     severity: error
+  #   description: Aucun montant négatif autorisé
+  # test_avg_range:
+  #   type: range
+  #   specific:
+  #     metric: amount_avg
+  #     min: 100
+  #     max: 300
+  #     severity: warning
+  #   description: Montant moyen doit être entre 100 et 300

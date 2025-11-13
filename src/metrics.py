@@ -2,6 +2,7 @@
 
 Contient :
 - missing_rate(df, column=None): retourne le taux de valeurs manquantes (0..1)
+- count_where(df, filter): compte le nombre de lignes vérifiant une condition
 - test_range(value, low, high, inclusive=True): test si value est entre low et high
 
 Fonctions conçues pour être petites, testables et faciles à intégrer dans l'application.
@@ -43,6 +44,36 @@ def missing_rate(df: pd.DataFrame, column: Optional[str] = None) -> float:
         return 0.0
     missing = df[column].isna().sum()
     return float(missing) / float(total)
+
+
+def count_where(df: pd.DataFrame, filter: str) -> int:
+    """Compte le nombre de lignes vérifiant une condition.
+
+    Args:
+        df: DataFrame à analyser.
+        filter: expression pandas à évaluer (ex: "age < 0", "revenue == 0").
+
+    Returns:
+        int: nombre de lignes vérifiant la condition.
+
+    Raises:
+        TypeError: si df n'est pas un DataFrame.
+        ValueError: si l'expression filter est invalide.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df must be a pandas DataFrame")
+
+    if not filter or not isinstance(filter, str):
+        raise ValueError("filter must be a non-empty string")
+
+    try:
+        mask = df.eval(filter)
+        if not isinstance(mask, pd.Series):
+            raise ValueError(f"Filter '{filter}' did not return a boolean Series")
+        return int(mask.sum())
+    except Exception as e:
+        raise ValueError(f"Invalid filter expression '{filter}': {e}")
+
 
 
 def dq_test_range(value: Any, low: Any, high: Any, inclusive: bool = True) -> Dict[str, Any]:

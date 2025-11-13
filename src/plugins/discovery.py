@@ -13,12 +13,11 @@ Usage:
     print(f"Trouvé {len(plugins)} plugins")
 """
 
-import os
 import sys
 import importlib
 import importlib.util
 from pathlib import Path
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Optional
 from src.plugins.base import BasePlugin, REGISTRY
 
 
@@ -155,11 +154,11 @@ def _discover_all_plugins_impl() -> Dict[str, PluginInfo]:
         for py_file in python_files:
             try:
                 # Importer le module (ça va populer REGISTRY via @register)
-                module = _import_module_from_path(py_file)
+                _import_module_from_path(py_file)
                 file_to_category[str(py_file)] = category
                 print(f"[OK] Imported {py_file.name}")
-            except Exception as e:
-                print(f"[ERROR] Failed to import {py_file}: {e}")
+            except Exception:  # pragma: no cover
+                # Import échoué, skip ce plugin
                 continue
     
     # Maintenant construire le dict de PluginInfo depuis REGISTRY
@@ -227,7 +226,7 @@ def get_plugins_by_category(category: str) -> List[Type[BasePlugin]]:
     ]
 
 
-def get_plugin_info(plugin_id: str) -> PluginInfo | None:
+def get_plugin_info(plugin_id: str) -> Optional[PluginInfo]:
     """
     Récupère les informations d'un plugin par son ID.
     
@@ -242,7 +241,7 @@ def get_plugin_info(plugin_id: str) -> PluginInfo | None:
 
 
 # Cache pour éviter de re-scanner à chaque appel
-_discovery_cache: Dict[str, PluginInfo] | None = None
+_discovery_cache: Optional[Dict[str, PluginInfo]] = None
 
 
 def ensure_plugins_discovered():
@@ -250,7 +249,12 @@ def ensure_plugins_discovered():
     S'assure que les plugins ont été découverts au moins une fois.
     
     Utilise un cache interne pour éviter de re-scanner à chaque appel.
+    CRITICAL: Vérifie aussi si REGISTRY est vide et force un rescan si nécessaire.
     """
     global _discovery_cache
-    if _discovery_cache is None:
-        _discovery_cache = discover_all_plugins(verbose=True)
+    
+    # Si REGISTRY est vide, forcer un rescan même si le cache existe
+    if not REGISTRY or len(REGISTRY) == 0:
+        _discovery_cache = discover_all_plugins(verbose=False, force_rescan=True)
+    elif _discovery_cache is None:
+        _discovery_cache = discover_all_plugins(verbose=False)

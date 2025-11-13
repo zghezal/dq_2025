@@ -1,0 +1,6 @@
+﻿id,name,email,age,revenue,country
+10,,client10@example.com,-1,1100,FR
+20,,client20@example.com,-1,1200,FR
+30,,client30@example.com,-1,0,FR
+40,,client40@example.com,-1,1400,US
+50,,client50@example.com,-1,1500,DE

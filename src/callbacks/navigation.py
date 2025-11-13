@@ -83,6 +83,12 @@ def register_navigation_callbacks(app):
             return select_dq_point_page()
         if clean_path == "/builder-landing":
             return builder_landing_page()
+        if clean_path == "/channel-admin":
+            from src.layouts.channel_admin import channel_admin_page
+            return channel_admin_page()
+        if clean_path == "/channel-drop":
+            from src.layouts.channel_drop import channel_drop_page
+            return channel_drop_page()
 
         # Fallback
         return dbc.Container([

@@ -1,0 +1,259 @@
+id: "sales_complete_quality"
+label: "Sales Complete Quality Check"
+version: "1.0"
+
+context:
+  stream: "sales_stream"
+  project: "retail_analytics"
+  zone: "bronze"
+  dq_point: "ingestion_quality"
+  quarter: "2025Q4"
+
+globals:
+  default_severity: "medium"
+  sample_size: 1000
+  fail_fast: false
+  timezone: "Europe/Paris"
+
+databases:
+  - alias: "sales_2024"
+    dataset: "sales_2024"
+  - alias: "refunds"
+    dataset: "refunds"
+
+metrics:
+  # Métriques de complétude
+  M_001_missing_date:
+    type: "missing_rate"
+    identification:
+      metric_id: "M_001_missing_date"
+    nature:
+      name: "Taux de dates manquantes"
+      description: "Vérifie le pourcentage de valeurs nulles dans la colonne date"
+      preliminary_comments: "Critique pour l'analyse temporelle"
+    general:
+      export: true
+      owner: "data_team"
+    specific:
+      dataset: "sales_2024"
+      column: "date"
+  
+  M_002_missing_amount:
+    type: "missing_rate"
+    identification:
+      metric_id: "M_002_missing_amount"
+    nature:
+      name: "Taux de montants manquants"
+      description: "Vérifie le pourcentage de valeurs nulles dans la colonne amount"
+      preliminary_comments: "Essentiel pour les calculs financiers"
+    general:
+      export: true
+      owner: "finance_team"
+    specific:
+      dataset: "sales_2024"
+      column: "amount"
+  
+  M_003_missing_product:
+    type: "missing_rate"
+    identification:
+      metric_id: "M_003_missing_product"
+    nature:
+      name: "Taux de produits manquants"
+      description: "Vérifie le pourcentage de valeurs nulles dans la colonne product_id"
+    general:
+      export: true
+    specific:
+      dataset: "sales_2024"
+      column: "product_id"
+  
+  # Métriques de volume
+  M_004_row_count:
+    type: "row_count"
+    identification:
+      metric_id: "M_004_row_count"
+    nature:
+      name: "Nombre total de lignes"
+      description: "Compte le nombre total de lignes dans sales_2024"
+      preliminary_comments: "Pour vérifier la volumétrie attendue"
+    general:
+      export: true
+    specific:
+      dataset: "sales_2024"
+  
+  # Métriques sur refunds
+  M_005_missing_refund_reason:
+    type: "missing_rate"
+    identification:
+      metric_id: "M_005_missing_refund_reason"
+    nature:
+      name: "Taux de raisons de remboursement manquantes"
+      description: "Vérifie que chaque remboursement a une raison documentée"
+    general:
+      export: true
+    specific:
+      dataset: "refunds"
+      column: "reason"
+
+tests:
+  # Tests de complétude
+  T_001_check_date_completeness:
+    type: "interval_check"
+    identification:
+      test_id: "T_001_check_date_completeness"
+      control_name: "Date completeness validation"
+      control_id: "CTRL_001"
+    nature:
+      name: "Validation complétude dates"
+      description: "S'assure que moins de 5% des dates sont manquantes"
+      functional_category_1: "Complétude"
+      functional_category_2: "Données temporelles"
+      category: "data_quality"
+      preliminary_comments: "Seuil accepté: max 5% de valeurs manquantes"
+    general:
+      severity: "high"
+      stop_on_failure: true
+      action_on_fail: "alert"
+      associated_metric_id: "M_001_missing_date"
+    specific:
+      value_from_metric: "M_001_missing_date"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.05
+      column_rules: []
+  
+  T_002_check_amount_completeness:
+    type: "interval_check"
+    identification:
+      test_id: "T_002_check_amount_completeness"
+      control_name: "Amount completeness validation"
+      control_id: "CTRL_002"
+    nature:
+      name: "Validation complétude montants"
+      description: "S'assure que moins de 2% des montants sont manquants"
+      functional_category_1: "Complétude"
+      functional_category_2: "Données financières"
+      category: "data_quality"
+    general:
+      severity: "critical"
+      stop_on_failure: true
+      action_on_fail: "block"
+      associated_metric_id: "M_002_missing_amount"
+    specific:
+      value_from_metric: "M_002_missing_amount"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.02
+      column_rules: []
+  
+  T_003_check_product_completeness:
+    type: "interval_check"
+    identification:
+      test_id: "T_003_check_product_completeness"
+      control_name: "Product completeness validation"
+      control_id: "CTRL_003"
+    nature:
+      name: "Validation complétude produits"
+      description: "S'assure qu'aucun product_id n'est manquant"
+      functional_category_1: "Complétude"
+      functional_category_2: "Référentiel produits"
+      category: "data_quality"
+    general:
+      severity: "high"
+      stop_on_failure: false
+      action_on_fail: "alert"
+      associated_metric_id: "M_003_missing_product"
+    specific:
+      value_from_metric: "M_003_missing_product"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.0
+      column_rules: []
+  
+  # Test de volumétrie
+  T_004_check_row_count:
+    type: "interval_check"
+    identification:
+      test_id: "T_004_check_row_count"
+      control_name: "Volume validation"
+      control_id: "CTRL_004"
+    nature:
+      name: "Validation volumétrie"
+      description: "Vérifie que le nombre de lignes est dans la plage attendue"
+      functional_category_1: "Volumétrie"
+      functional_category_2: "Complétude dataset"
+      category: "data_quality"
+      preliminary_comments: "Attendu: entre 5 et 10000 lignes"
+    general:
+      severity: "medium"
+      stop_on_failure: false
+      action_on_fail: "alert"
+      associated_metric_id: "M_004_row_count"
+    specific:
+      value_from_metric: "M_004_row_count"
+      target_mode: "metric"
+      bounds:
+        lower: 5
+        upper: 10000
+      column_rules: []
+  
+  # Test sur colonnes multiples avec règles spécifiques
+  T_005_check_amounts_by_column:
+    type: "interval_check"
+    identification:
+      test_id: "T_005_check_amounts_by_column"
+      control_name: "Amount range validation per column"
+      control_id: "CTRL_005"
+    nature:
+      name: "Validation montants par colonne"
+      description: "Vérifie que les montants sont dans les plages valides avec règles spécifiques par colonne"
+      functional_category_1: "Cohérence"
+      functional_category_2: "Données financières"
+      category: "business_rule"
+    general:
+      severity: "high"
+      stop_on_failure: false
+      action_on_fail: "alert"
+    specific:
+      value_from_dataset: "sales_2024"
+      target_mode: "dataset"
+      bounds:
+        lower: 0
+        upper: 10000
+      column_rules:
+        - columns: ["amount"]
+          bounds:
+            lower: 10
+            upper: 500
+        - columns: ["quantity"]
+          bounds:
+            lower: 1
+            upper: 100
+  
+  # Test sur refunds
+  T_006_check_refund_reasons:
+    type: "interval_check"
+    identification:
+      test_id: "T_006_check_refund_reasons"
+      control_name: "Refund reason completeness"
+      control_id: "CTRL_006"
+    nature:
+      name: "Validation raisons remboursement"
+      description: "Vérifie que toutes les raisons de remboursement sont renseignées"
+      functional_category_1: "Complétude"
+      functional_category_2: "Données remboursement"
+      category: "data_quality"
+    general:
+      severity: "medium"
+      stop_on_failure: false
+      action_on_fail: "alert"
+      associated_metric_id: "M_005_missing_refund_reason"
+    specific:
+      value_from_metric: "M_005_missing_refund_reason"
+      target_mode: "metric"
+      bounds:
+        lower: 0.0
+        upper: 0.1
+      column_rules: []

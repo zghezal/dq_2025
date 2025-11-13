@@ -20,12 +20,20 @@ from src.layouts.select_project import select_project_page
 from src.layouts.select_dq_point import select_dq_point_page
 from src.layouts.builder_landing import builder_landing_page
 from src.layouts.select_quarter import select_quarter_page
+from src.layouts.channel_admin import channel_admin_page
+from src.layouts.channel_drop import channel_drop_page
 
 # Callbacks
 from src.callbacks.navigation import register_navigation_callbacks
 from src.callbacks.dq import register_dq_callbacks
 from src.callbacks.build import register_build_callbacks
 from src.callbacks.configs import register_configs_callbacks
+from src.callbacks.dq_inventory import register_dq_inventory_callbacks
+from src.callbacks.dq_runner import register_dq_runner_callbacks
+# Import des callbacks channels (ils s'enregistrent automatiquement via @callback)
+import src.callbacks.channels_admin
+import src.callbacks.channels_drop
+
 # Spark context global (instantiated at app startup so Dataiku webapp finds a ready Spark session)
 try:
     from src.context.spark_context import SparkDQContext
@@ -36,8 +44,45 @@ except Exception:
     spark_ctx = None
 
 # Initialisation de l'application Dash
-external_stylesheets = [dbc.themes.BOOTSTRAP]
+external_stylesheets = [
+    dbc.themes.BOOTSTRAP,
+    "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"
+]
 app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+
+# Custom CSS pour améliorer l'apparence
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            .hover-shadow:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+            }
+            .card {
+                border-radius: 0.5rem;
+            }
+            .btn-lg {
+                padding: 0.75rem 1.5rem;
+                font-weight: 500;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
 
 # Attach the Spark context to the underlying Flask server so callbacks can reuse it
 if spark_ctx is not None:
@@ -98,7 +143,9 @@ app.validation_layout = html.Div([
         dcc.Input(id={"role": "interval-rule-lower-value", "index": "placeholder"}, type="number", style={"display": "none"}),
         dbc.Checkbox(id={"role": "interval-rule-upper-enabled", "index": "placeholder"}, value=False, style={"display": "none"}),
         dcc.Input(id={"role": "interval-rule-upper-value", "index": "placeholder"}, type="number", style={"display": "none"}),
-    configs_page()
+    configs_page(),
+    channel_admin_page(),
+    channel_drop_page()
 ])
 
 # Enregistrement des callbacks
@@ -106,6 +153,8 @@ register_navigation_callbacks(app)
 register_dq_callbacks(app)
 register_build_callbacks(app)
 register_configs_callbacks(app)
+register_dq_inventory_callbacks(app)
+register_dq_runner_callbacks(app)
 
 if __name__ == "__main__":
     app.run(debug=True)

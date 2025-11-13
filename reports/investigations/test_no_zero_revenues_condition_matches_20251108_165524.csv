@@ -1,0 +1,17 @@
+﻿id,name,email,age,revenue,country
+3,Client_3,client3@example.com,23,0,FR
+6,Client_6,client6@example.com,26,0,FR
+9,Client_9,client9@example.com,29,0,FR
+12,Client_12,client12@example.com,32,0,FR
+15,,client15@example.com,35,0,FR
+18,Client_18,client18@example.com,38,0,FR
+21,Client_21,,41,0,FR
+24,Client_24,client24@example.com,44,0,FR
+27,Client_27,client27@example.com,47,0,FR
+30,,client30@example.com,-1,0,FR
+33,Client_33,client33@example.com,53,0,US
+36,Client_36,client36@example.com,56,0,US
+39,Client_39,client39@example.com,59,0,US
+42,Client_42,,62,0,UK
+45,,client45@example.com,65,0,UK
+48,Client_48,client48@example.com,68,0,DE

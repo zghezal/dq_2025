@@ -3,10 +3,11 @@
 Ce paquet **n'écrase aucun fichier existant**. Il ajoute :
 - `src/core/ui_meta.py`
 - `src/plugins/base_models.py`
-- `src/plugins/tests/range2_test.py` (nouvelle version auto-UI — l'ancienne reste intacte)
 - `src/ui/form_builder.py` (générateur de formulaires)
 - `tests/test_plugin_contracts.py` (contract tests)
-- `tests/test_plugins_datadriven.py` + `tests/cases/tests_range2.yaml` (tests data-driven)
+- `tests/test_plugins_datadriven.py` + `tests/cases/tests_*.yaml` (tests data-driven)
+
+**Note**: Les références à range2_test dans ce document sont obsolètes. Le projet n'utilise que 2 plugins autorisés: **missing_rate** (métrique) et **interval_check** (test).
 
 ## Intégration dans le Builder (optionnelle, sans casser l'existant)
 

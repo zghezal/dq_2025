@@ -1,0 +1,9 @@
+﻿customer_id,email,age,country,registration_date
+CUST_1000,,-1,FR,2023-01-01
+CUST_1015,client15@example.com,-1,FR,2023-02-15
+CUST_1030,,-1,FR,2023-04-01
+CUST_1045,client45@example.com,-1,FR,2023-05-16
+CUST_1060,,-1,FR,2023-06-30
+CUST_1075,client75@example.com,-1,FR,2023-08-14
+CUST_1090,,-1,FR,2023-09-28
+CUST_1105,client105@example.com,-1,US,2023-11-12

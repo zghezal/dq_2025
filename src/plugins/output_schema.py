@@ -8,7 +8,7 @@ AVANT leur exécution. Cela permet au système de construire un catalogue de
 Exemple d'usage:
     class MyAggregationMetric(BasePlugin):
         @classmethod
-        def output_schema(cls, params: dict) -> OutputSchema | None:
+        def output_schema(cls, params: dict) -> Optional[OutputSchema]:
             # Cette métrique produit un dataset avec 3 colonnes
             return OutputSchema(
                 columns=[
