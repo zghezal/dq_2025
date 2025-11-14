@@ -6,7 +6,6 @@ Gère la sélection de canal, le mapping de fichiers et la soumission.
 import dash
 from dash import Input, Output, State, callback, html, dcc, no_update, ALL
 from dash.exceptions import PreventUpdate
-import dash_bootstrap_components as dbc
 import uuid
 from datetime import datetime
 
@@ -110,7 +109,6 @@ def _render_file_input_row(spec, index):
     )
     
     return html.Div([
-        dcc.Store(id={'type': 'uploaded-file-store', 'file_id': spec.file_id}),
         html.Div([
             html.Label([
                 html.Strong(spec.name),
@@ -122,18 +120,11 @@ def _render_file_input_row(spec, index):
                 f"ID: {spec.file_id}",
                 className="text-muted d-block mb-2"
             ),
-            html.Div([
-                dcc.Input(
-                    id={'type': 'file-path-input', 'file_id': spec.file_id},
-                    placeholder=f"Chemin ou URL vers {spec.name} (.{spec.format.value})",
-                    className="form-control mb-2"
-                ),
-                dcc.Upload(
-                    id={'type': 'file-upload', 'file_id': spec.file_id},
-                    children=html.Button('📂 Parcourir...', className="btn btn-outline-primary btn-sm mt-2"),
-                    multiple=False
-                )
-            ]),
+            dcc.Input(
+                id={'type': 'file-path-input', 'file_id': spec.file_id},
+                placeholder=f"Chemin ou URL vers {spec.name} (.{spec.format.value})",
+                className="form-control mb-2"
+            ),
             html.Div(
                 id={'type': 'file-validation-msg', 'file_id': spec.file_id},
                 className="small"
@@ -213,7 +204,6 @@ def update_summary(channel_id, submitter_name, submitter_email, file_paths, chan
     Output('submitter-email-input', 'value'),
     Output({'type': 'file-path-input', 'file_id': dash.dependencies.ALL}, 'value'),
     Output('toast-container-drop', 'children'),
-    Output('download-report-container', 'children'),
     Input('btn-submit-drop', 'n_clicks'),
     State('drop-channel-dropdown', 'value'),
     State('submitter-name-input', 'value'),
@@ -233,14 +223,14 @@ def submit_drop(n_clicks, channel_id, submitter_name, submitter_email, file_path
             html.Strong("Erreur: "),
             "Veuillez sélectionner un canal"
         ], className="toast show bg-danger text-white")
-        return False, "", no_update, no_update, no_update, no_update, toast, ""
+        return False, "", no_update, no_update, no_update, no_update, toast
     
     if not submitter_email:
         toast = html.Div([
             html.Strong("Erreur: "),
             "Veuillez fournir votre email"
         ], className="toast show bg-danger text-white")
-        return False, "", no_update, no_update, no_update, no_update, toast, ""
+        return False, "", no_update, no_update, no_update, no_update, toast
     
     manager = get_channel_manager()
     channel = manager.get_channel(channel_id)
@@ -250,7 +240,7 @@ def submit_drop(n_clicks, channel_id, submitter_name, submitter_email, file_path
             html.Strong("Erreur: "),
             "Canal non trouvé"
         ], className="toast show bg-danger text-white")
-        return False, "", no_update, no_update, no_update, no_update, toast, ""
+        return False, "", no_update, no_update, no_update, no_update, toast
     
     # Construire file mappings
     file_mappings = []
@@ -279,7 +269,7 @@ def submit_drop(n_clicks, channel_id, submitter_name, submitter_email, file_path
             html.Strong("Erreur: "),
             f"Fichiers requis manquants: {', '.join(missing_required)}"
         ], className="toast show bg-danger text-white")
-        return False, "", no_update, no_update, no_update, no_update, toast, ""
+        return False, "", no_update, no_update, no_update, no_update, toast
     
     # Créer submission
     submission_id = f"sub_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -330,24 +320,14 @@ def submit_drop(n_clicks, channel_id, submitter_name, submitter_email, file_path
             "Soumission enregistrée et traitée"
         ], className="toast show bg-success text-white")
         
-        # Bouton de téléchargement du rapport
-        download_button = ""
-        if processed.dq_report_path:
-            download_button = dbc.Button(
-                [html.I(className="bi bi-download me-2"), "Télécharger le rapport DQ"],
-                id={'type': 'download-report-btn', 'submission_id': submission_id},
-                color="info",
-                className="mt-2"
-            )
-        
-        return True, tracking_display, None, "", "", empty_paths, toast, download_button
+        return True, tracking_display, None, "", "", empty_paths, toast
         
     except Exception as e:
         toast = html.Div([
             html.Strong("Erreur: "),
             f"Échec du traitement: {str(e)}"
         ], className="toast show bg-danger text-white")
-        return False, "", no_update, no_update, no_update, no_update, toast, ""
+        return False, "", no_update, no_update, no_update, no_update, toast
 
 
 @callback(
@@ -382,6 +362,7 @@ def validate_file_path(file_path):
         "Fichier non trouvé (sera validé lors de la soumission)"
     ])
 
+
 @callback(
     Output('success-modal', 'is_open', allow_duplicate=True),
     Input('btn-close-success-modal', 'n_clicks'),
@@ -392,73 +373,3 @@ def close_success_modal(n_clicks):
     if n_clicks:
         return False
     raise PreventUpdate
-
-
-@callback(
-    Output({'type': 'uploaded-file-store', 'file_id': dash.dependencies.MATCH}, 'data'),
-    Input({'type': 'file-upload', 'file_id': dash.dependencies.MATCH}, 'filename'),
-    Input({'type': 'file-upload', 'file_id': dash.dependencies.MATCH}, 'contents'),
-    prevent_initial_call=True
-)
-def store_uploaded_file(filename, contents):
-    """Sauvegarde le fichier uploadé dans data/ et stocke le chemin."""
-    if not filename or not contents:
-        raise PreventUpdate
-    
-    import os
-    import base64
-    from pathlib import Path
-    
-    upload_dir = Path("data")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        name, ext = os.path.splitext(filename)
-        file_path = upload_dir / f"{name}_{timestamp}{ext}"
-        with open(file_path, 'wb') as f:
-            f.write(decoded)
-        return str(file_path.absolute())
-    except Exception as e:
-        print(f"Erreur upload: {e}")
-        raise PreventUpdate
-
-@callback(
-    Output({'type': 'file-path-input', 'file_id': dash.dependencies.MATCH}, 'value', allow_duplicate=True),
-    Input({'type': 'uploaded-file-store', 'file_id': dash.dependencies.MATCH}, 'data'),
-    prevent_initial_call=True
-)
-def update_input_from_store(file_path):
-    """Met à jour le champ de saisie avec le chemin du fichier uploadé."""
-    if file_path:
-        return file_path
-    raise PreventUpdate
-@callback(
-    Output('download-dq-report', 'data'),
-    Input({'type': 'download-report-btn', 'submission_id': ALL}, 'n_clicks'),
-    State({'type': 'download-report-btn', 'submission_id': ALL}, 'id'),
-    prevent_initial_call=True
-)
-def download_report(n_clicks_list, ids_list):
-    '''Télécharge le rapport DQ Excel.'''
-    if not n_clicks_list or not any(n_clicks_list):
-        raise PreventUpdate
-    
-    # Trouver quel bouton a été cliqué
-    clicked_index = next((i for i, n in enumerate(n_clicks_list) if n), None)
-    if clicked_index is None:
-        raise PreventUpdate
-    
-    submission_id = ids_list[clicked_index]['submission_id']
-    
-    # Récupérer la soumission
-    manager = get_channel_manager()
-    submission = manager.get_submission(submission_id)
-    
-    if not submission or not submission.dq_report_path:
-        raise PreventUpdate
-    
-    # Télécharger le fichier
-    return dcc.send_file(submission.dq_report_path)

@@ -191,25 +191,111 @@ def register_dq_runner_callbacks(app):
                 html.Pre(error_trace, className="small") if error_trace else None
             ], color="danger"), False, None
 
-    # Callback intermédiaire pour capturer le clic et mettre à jour le store trigger
+    # Callback pour ouvrir la modal de confirmation d'export
     @app.callback(
-        Output("dq-runner-export-trigger", "data"),
+        Output("export-confirm-modal", "is_open"),
+        Output("export-confirm-modal-body", "children"),
         Input("dq-runner-export-btn", "n_clicks"),
+        Input("export-confirm-cancel", "n_clicks"),
+        Input("export-confirm-download", "n_clicks"),
+        State("dq-runner-results-store", "data"),
+        State("export-confirm-modal", "is_open"),
         prevent_initial_call=True
     )
-    def trigger_export(n_clicks):
-        """Déclenche l'export en mettant à jour le store"""
-        print(f"[DEBUG trigger_export] Button clicked, n_clicks={n_clicks}")
-        return n_clicks if n_clicks else 0
+    def toggle_export_modal(export_clicks, cancel_clicks, download_clicks, store_data, is_open):
+        """Affiche/cache la modal de confirmation d'export"""
+        from dash import callback_context
+        
+        if not callback_context.triggered:
+            return False, no_update
+        
+        triggered_id = callback_context.triggered[0]["prop_id"].split(".")[0]
+        
+        # Si on clique sur Annuler ou fermer, on ferme la modal
+        if triggered_id in ["export-confirm-cancel"]:
+            return False, no_update
+        
+        # Si on clique sur Télécharger, on ferme la modal (le téléchargement sera géré par un autre callback)
+        if triggered_id == "export-confirm-download":
+            return False, no_update
+        
+        # Si on clique sur Exporter, on ouvre la modal avec le contenu
+        if triggered_id == "dq-runner-export-btn" and store_data:
+            run_id = store_data.get("run_id")
+            dq_id = store_data.get("dq_id")
+            timestamp = store_data.get("timestamp", "N/A")
+            duration = store_data.get("duration", 0)
+            investigate = store_data.get("investigate", False)
+            
+            metrics_count = len(store_data.get("metrics", {}))
+            tests = store_data.get("tests", {})
+            tests_count = len(tests)
+            passed_tests = sum(1 for t in tests.values() if t.get("passed", False))
+            failed_tests = tests_count - passed_tests
+            
+            investigations = store_data.get("investigations", [])
+            investigations_count = len(investigations)
+            
+            # Construire le contenu de la modal
+            content = [
+                html.P("Le fichier ZIP contiendra les éléments suivants:", className="mb-3"),
+                
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H6([html.I(className="bi bi-info-circle me-2"), "Informations générales"], className="mb-3"),
+                        html.Ul([
+                            html.Li([html.Strong("DQ ID: "), dq_id]),
+                            html.Li([html.Strong("Run ID: "), run_id]),
+                            html.Li([html.Strong("Timestamp: "), timestamp]),
+                            html.Li([html.Strong("Durée: "), f"{duration:.2f}s"]),
+                            html.Li([html.Strong("Investigation: "), "Activée" if investigate else "Désactivée"]),
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H6([html.I(className="bi bi-file-earmark-text me-2"), "Fichiers inclus"], className="mb-3"),
+                        html.Ul([
+                            html.Li([
+                                html.Strong("manifest.json"),
+                                html.Span(" - Métadonnées de l'exécution", className="text-muted small")
+                            ]),
+                            html.Li([
+                                html.Strong("results.json"),
+                                html.Span(f" - {metrics_count} métriques, {tests_count} tests ({passed_tests} réussis, {failed_tests} échoués)", 
+                                         className="text-muted small")
+                            ]),
+                            html.Li([
+                                html.Strong("investigation_report.txt"),
+                                html.Span(" - Rapport d'investigation", className="text-muted small")
+                            ]) if store_data.get("investigation_report") else None,
+                            html.Li([
+                                html.Strong(f"investigations/ ({investigations_count} fichiers CSV)"),
+                                html.Span(" - Échantillons de données problématiques", className="text-muted small")
+                            ]) if investigations_count > 0 else None,
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                dbc.Alert([
+                    html.I(className="bi bi-info-circle-fill me-2"),
+                    f"Taille estimée: ~{metrics_count + tests_count + investigations_count} fichiers"
+                ], color="info", className="mb-0")
+            ]
+            
+            return True, content
+        
+        return False, no_update
     
     # Callback principal qui fait l'export
     @app.callback(
         Output("dq-runner-download", "data"),
-        Input("dq-runner-export-trigger", "data"),
+        Input("export-confirm-download", "n_clicks"),
         State("dq-runner-results-store", "data"),
         prevent_initial_call=True
     )
-    def export_dq_results(trigger, store_data):
+    def export_dq_results(n_clicks, store_data):
         """Exporte les résultats DQ dans un fichier ZIP"""
         import json
         import zipfile
@@ -217,12 +303,12 @@ def register_dq_runner_callbacks(app):
         from pathlib import Path
         
         print(f"========== EXPORT CALLBACK TRIGGERED ==========")
-        print(f"[DEBUG export_dq_results] trigger={trigger}")
+        print(f"[DEBUG export_dq_results] n_clicks={n_clicks}")
         print(f"[DEBUG export_dq_results] store_data type: {type(store_data)}")
         print(f"[DEBUG export_dq_results] store_data keys: {store_data.keys() if isinstance(store_data, dict) else 'N/A'}")
         
-        # Si pas de trigger ou pas de données, ne rien faire
-        if not trigger or not store_data:
+        # Si pas de clicks ou pas de données, ne rien faire
+        if not n_clicks or not store_data:
             print(f"[ERROR export_dq_results] No store_data available")
             return no_update
         

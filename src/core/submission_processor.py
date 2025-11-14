@@ -201,42 +201,40 @@ class SubmissionProcessor:
                 # Charger la config DQ
                 config = load_dq_config(dq_config_path)
                 
-                # Construire la séquence
-                sequencer = DQSequencer(config)
-                sequence = sequencer.build_sequence()
+                # Préparer le loader de datasets
+                def loader(alias: str):
+                    if alias in datasets:
+                        return datasets[alias]
+                    raise ValueError(f"Dataset {alias} non trouvé")
                 
-                # Simuler l'exécution (à remplacer par vraie exécution)
-                executor = DQExecutor(sequence)
+                # Construire le plan d'exécution
+                from src.core.parser import build_execution_plan
+                from src.core.models_inventory import Inventory
                 
-                def execute_mock(cmd):
-                    """Mock d'exécution - à remplacer par vraie logique"""
-                    import random
-                    rand = random.random()
-                    
-                    if rand > 0.15:
-                        return {
-                            'status': ExecutionStatus.SUCCESS,
-                            'value': round(random.uniform(0, 0.1), 4),
-                            'error': ''
-                        }
-                    else:
-                        return {
-                            'status': ExecutionStatus.ERROR,
-                            'error': 'Simulation erreur'
-                        }
+                # Créer un inventaire minimal pour le parser
+                inv_data = {
+                    'streams': {},
+                    'datasets': {alias: {'alias': alias, 'path': f'memory://{alias}'} for alias in datasets.keys()}
+                }
+                inv = Inventory(**inv_data)
                 
-                results = executor.execute(execute_mock, skip_on_dependency_failure=True)
+                # Construire le plan avec les overrides
+                overrides = {alias: f'memory://{alias}' for alias in datasets.keys()}
+                plan = build_execution_plan(inv, config, overrides=overrides)
+                
+                # Exécuter le plan
+                from src.core.executor import execute
+                run_result = execute(plan, loader, investigate=False)
                 
                 # Compter les résultats
-                summary = executor.get_summary()
-                total_passed += summary.get(ExecutionStatus.SUCCESS, 0)
-                total_failed += summary.get(ExecutionStatus.FAIL, 0) + summary.get(ExecutionStatus.ERROR, 0)
-                total_skipped += summary.get(ExecutionStatus.SKIPPED, 0)
+                total_passed += sum(1 for t in run_result.tests.values() if t.passed)
+                total_failed += sum(1 for t in run_result.tests.values() if not t.passed)
                 
                 all_results[dq_config_path] = {
-                    'sequence': sequence,
-                    'results': results,
-                    'summary': summary
+                    'metrics': {k: v.model_dump() for k, v in run_result.metrics.items()},
+                    'tests': {k: v.model_dump() for k, v in run_result.tests.items()},
+                    'passed': sum(1 for t in run_result.tests.values() if t.passed),
+                    'failed': sum(1 for t in run_result.tests.values() if not t.passed)
                 }
                 
             except Exception as e:

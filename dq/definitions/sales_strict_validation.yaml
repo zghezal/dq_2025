@@ -1,0 +1,72 @@
+id: sales_strict_validation
+description: "Validation stricte des ventes avec tolérance zéro et règles métier personnalisées"
+version: "1.0"
+
+datasets:
+  sales_data:
+    alias: sales_data
+    path: null  # sera fourni lors de l'exécution
+
+metrics:
+  missing_rate_amount:
+    type: missing_rate
+    specific:
+      dataset: sales_data
+      column: amount
+  
+  missing_rate_customer:
+    type: missing_rate
+    specific:
+      dataset: sales_data
+      column: customer_id
+  
+  missing_rate_date:
+    type: missing_rate
+    specific:
+      dataset: sales_data
+      column: date
+
+tests:
+  no_missing_amount:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_amount
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "AUCUNE valeur manquante acceptée dans amount"
+  
+  no_missing_customer:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_customer
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "AUCUNE valeur manquante acceptée dans customer_id"
+  
+  no_missing_date:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_date
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "AUCUNE valeur manquante acceptée dans date"
+
+scripts:
+  - id: business_validation
+    path: scripts/validation/business_checks.py
+    datasets:
+      - sales_data
+    params:
+      dataset: sales_data
+      min_amount: 0.01
+      max_amount: 10000
+    description: "Validation des règles métier strictes"

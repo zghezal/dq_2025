@@ -1,5 +1,15 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel
+
+
+class ScriptDefinition(BaseModel):
+    id: str
+    label: Optional[str] = None
+    path: str
+    enabled: bool = True
+    execute_on: Literal["pre_dq", "post_dq", "independent"] = "post_dq"
+    params: Dict[str, Any] = {}
+
 
 class DQContext(BaseModel):
     stream: Optional[str] = None
@@ -14,3 +24,4 @@ class DQDefinition(BaseModel):
     databases: List[Dict[str, str]] = []
     metrics: Dict[str, Dict[str, Any]] = {}  # ID comme clé au lieu de liste
     tests: Dict[str, Dict[str, Any]] = {}    # ID comme clé au lieu de liste
+    scripts: List[ScriptDefinition] = []

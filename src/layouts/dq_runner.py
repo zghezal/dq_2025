@@ -18,9 +18,6 @@ def dq_runner_page():
         # Store pour conserver les résultats d'exécution
         dcc.Store(id="dq-runner-results-store", data=None),
         
-        # Store pour déclencher l'export
-        dcc.Store(id="dq-runner-export-trigger", data=0),
-        
         # Download component pour l'export
         dcc.Download(id="dq-runner-download"),
         
@@ -32,6 +29,22 @@ def dq_runner_page():
                 dbc.Button("Fermer", id="test-detail-modal-close", className="ms-auto")
             )
         ], id="test-detail-modal", size="lg", is_open=False),
+        
+        # Modal de confirmation pour l'export
+        dbc.Modal([
+            dbc.ModalHeader(dbc.ModalTitle([
+                html.I(className="bi bi-file-earmark-zip me-2"),
+                "Confirmation d'export"
+            ])),
+            dbc.ModalBody(id="export-confirm-modal-body"),
+            dbc.ModalFooter([
+                dbc.Button("Annuler", id="export-confirm-cancel", color="secondary", outline=True, className="me-2"),
+                dbc.Button([
+                    html.I(className="bi bi-download me-2"),
+                    "Télécharger"
+                ], id="export-confirm-download", color="primary")
+            ])
+        ], id="export-confirm-modal", size="lg", is_open=False),
         
         # Header
         dbc.Row([

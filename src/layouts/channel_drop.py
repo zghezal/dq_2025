@@ -198,12 +198,17 @@ def channel_drop_page():
                 html.P([
                     html.Strong("Numéro de suivi: "),
                     html.Span(id="tracking-number-display", className="text-primary")
-                ], className="text-center")
+                ], className="text-center"),
+                html.Hr(),
+                html.Div(id="download-report-container", className="text-center mt-3")
             ]),
             dbc.ModalFooter([
                 dbc.Button("Fermer", id="btn-close-success-modal", color="primary")
             ])
         ], id="success-modal", centered=True),
+        
+        # Composant de téléchargement
+        dcc.Download(id="download-dq-report"),
         
         # Alert pour les erreurs
         html.Div(id="drop-alert-container", className="mt-3")
