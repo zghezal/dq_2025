@@ -1,6 +1,6 @@
 # Page d'accueil
 
-from dash import html
+from dash import html, dcc
 import dash_bootstrap_components as dbc
 
 

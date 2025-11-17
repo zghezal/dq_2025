@@ -1,0 +1,13 @@
+{
+  "id": "A_P1_RAW_SALES_VALIDATION",
+  "label": "Validation des ventes P1 Raw",
+  "description": "Validation spécifique pour les données de ventes du projet P1 en zone raw: cohérence montants, quantités positives, dates valides",
+  "execute_on": "post_dq",
+  "criticality": "high",
+  "params": {
+    "missing_threshold": 0.10
+  },
+  "tags": ["sales", "validation", "business_rule"],
+  "author": "P1 Team",
+  "version": "1.0"
+}

@@ -531,7 +531,8 @@ def register_build_callbacks(app):
                 auto_data = []
                 for it, name in zip(items, names):
                     alias = it.get("alias") or (name and name.split(".")[0].lower())
-                    auto_data.append({"alias": alias, "dataset": name})
+                    # Utiliser l'alias pour "dataset" aussi, car il sera résolu via l'inventaire
+                    auto_data.append({"alias": alias, "dataset": alias})
                 print(f"[DEBUG] Auto-loading {len(auto_data)} datasets from inventory into Builder: {auto_data}")
                 return options, auto_data
 
@@ -560,7 +561,8 @@ def register_build_callbacks(app):
                 auto_data = []
                 for d, name in zip(datasets, names):
                     alias = d.get("alias") or (name and name.split(".")[0].lower())
-                    auto_data.append({"alias": alias, "dataset": name})
+                    # Utiliser l'alias pour "dataset" aussi, car il sera résolu via l'inventaire
+                    auto_data.append({"alias": alias, "dataset": alias})
                 
                 print(f"[DEBUG] ✅ Chargement direct réussi: {len(auto_data)} datasets depuis inventory")
                 return options, auto_data
@@ -1726,7 +1728,6 @@ def register_build_callbacks(app):
             html.Th("Description"),
             html.Th("Commentaires"),
             html.Th("Export"),
-            html.Th("Owner"),
             html.Th("Paramétrage spécifique"),
             html.Th("Actions", style={"width": "200px"})
         ])
@@ -1780,7 +1781,6 @@ def register_build_callbacks(app):
                 html.Td(description, style={"fontSize": "0.85em", "maxWidth": "200px"}),
                 html.Td(comments, style={"fontSize": "0.85em", "maxWidth": "200px"}),
                 html.Td(export_flag),
-                html.Td(owner),
                 html.Td(specific_summary, style={"fontSize": "0.9em"}),
                 html.Td(actions)
             ], style={"backgroundColor": "#f8f9fa" if idx % 2 else "white"})
@@ -2260,7 +2260,7 @@ def register_build_callbacks(app):
             
             return html.Div([nature_card, identification_card, general_card, specific_card, preview])
 
-        if test_type == "test.interval_check":
+        if test_type == "interval_check":
             source_section = html.Div([
                 html.H6("🎯 Source des données", className="mb-3"),
                 html.Label("Type de source", className="mb-2"),
@@ -2365,7 +2365,7 @@ def register_build_callbacks(app):
         source_type = first(source_type_list) or "database"
         ds_aliases = [d["alias"] for d in (ds_data or [])]
         metric_ids = [m.get("id") for m in (metrics or []) if m.get("id")]
-        is_interval = current_test_type == "test.interval_check"
+        is_interval = current_test_type == "interval_check"
         
         if source_type == "database":
             return dbc.Row([
@@ -2442,7 +2442,7 @@ def register_build_callbacks(app):
         """Ajoute une nouvelle règle vide au store (utilisé pour rendre un bloc de paramètres)."""
         if not n_clicks:
             raise PreventUpdate
-        if current_test_type != "test.interval_check":
+        if current_test_type != "interval_check":
             raise PreventUpdate
         data = list(store_data or [])
         new_id = uuid4().hex
@@ -2841,7 +2841,7 @@ def register_build_callbacks(app):
                     "inclusive": True
                 }
             obj["specific"] = prune_dict(specific, keep_empty_lists={"columns"})
-        elif ttype == "test.interval_check":
+        elif ttype == "interval_check":
             target_mode = "metric_value" if source_mode == "metric" else "dataset_columns"
             lower_value = _cast_optional_number(lower_raw)
             upper_value = _cast_optional_number(upper_raw)
@@ -3046,7 +3046,7 @@ def register_build_callbacks(app):
                 "column": col or None,
                 "pattern": pat or None
             })
-        elif ttype == "test.interval_check":
+        elif ttype == "interval_check":
             target_mode = "metric_value" if source_mode == "metric" else "dataset_columns"
             columns = normalize_columns(col)
             lower_value = _cast_optional_number(lower_raw)
@@ -3126,21 +3126,23 @@ def register_build_callbacks(app):
         Input("store_datasets", "data"),
         Input("store_metrics", "data"),
         Input("store_tests", "data"),
+        Input("store_scripts", "data"),
         Input("fmt", "value"),
         State("url", "search"),
         State("run-context-store", "data")
     )
-    def render_cfg_preview(datasets, metrics, tests, fmt, search, run_context):
+    def render_cfg_preview(datasets, metrics, tests, scripts, fmt, search, run_context):
         """Génère la prévisualisation de la configuration finale"""
         q = parse_query(search or "")
         cfg = cfg_template()
         
-        # Context avec zone ajoutée
+        # Context avec quarter au lieu de dq_point
+        quarter_value = (run_context or {}).get("quarter") if run_context else None
         cfg["context"] = {
             "stream": q.get("stream"),
             "project": q.get("project"),
             "zone": q.get("zone"),
-            "dq_point": q.get("dq_point")
+            "quarter": quarter_value
         }
         
         cfg["databases"] = datasets or []
@@ -3172,6 +3174,7 @@ def register_build_callbacks(app):
         
         cfg["metrics"] = metrics_dict
         cfg["tests"] = tests_dict
+        cfg["scripts"] = scripts or []
         try:
             if fmt == "yaml":
                 return yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)
@@ -3179,41 +3182,6 @@ def register_build_callbacks(app):
                 return json.dumps(cfg, ensure_ascii=False, indent=2)
         except Exception as e:
             return f"Erreur de sérialisation: {e}"
-
-    @app.callback(
-        Output("publish-status", "children"),
-        Input("publish", "n_clicks"),
-        State("cfg-preview", "children"),
-        State("fmt", "value"),
-        State("folder-id", "value"),
-        State("cfg-name", "value")
-    )
-    def publish_cfg(n, preview_text, fmt, folder_id, cfg_name):
-        """Publie la configuration dans un Managed Folder Dataiku"""
-        if not n:
-            return ""
-        if not preview_text:
-            return "Aperçu vide : rien à publier."
-        # Validate the configuration before publishing
-        try:
-            cfg_obj = yaml.safe_load(preview_text) if fmt == 'yaml' else json.loads(preview_text)
-        except Exception:
-            return "Aperçu invalide: impossible de parser le contenu"
-        issues = validate_cfg(cfg_obj)
-        if issues:
-            # Return a formatted list of issues
-            return dbc.Alert([html.P("Validation échouée : vérifier la configuration."), html.Ul([html.Li(i) for i in issues])], color="danger", dismissable=True)
-        try:
-            folder = dataiku.Folder(folder_id or "dq_params")
-        except Exception as e:
-            return f"Erreur: folder '{folder_id}' introuvable ({e})"
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        fname = f"dq_config_{cfg_name or 'default'}_{ts}." + ("yaml" if fmt == 'yaml' else "json")
-        try:
-            folder.upload_data(fname, preview_text.encode("utf-8"))
-            return f"Publié : {fname} → Folder '{folder_id or 'dq_params'}'"
-        except Exception as e:
-            return f"Erreur de publication : {e}"
 
     # ===== Tableaux de visualisation =====
     
@@ -3280,7 +3248,6 @@ def register_build_callbacks(app):
             html.Th("ID"),
             html.Th("Type"),
             html.Th("Source"),
-            html.Th("Colonne"),
             html.Th("Sévérité"),
             html.Th("Range"),
             html.Th("Description"),
@@ -3299,24 +3266,15 @@ def register_build_callbacks(app):
                 if mode == "metric_value":
                     metric_id = spec.get("metric_id") or t.get("metric") or "-"
                     source_info = f"📊 {metric_id}"
-                    column_info = "-"
                 else:
                     database = spec.get("database") or t.get("database") or "-"
-                    cols = spec.get("columns") or t.get("columns") or []
-                    if isinstance(cols, (list, tuple, set)):
-                        cols_display = ", ".join(str(c) for c in cols if c not in (None, "")) or "-"
-                    else:
-                        cols_display = str(cols) if cols else "-"
                     source_info = database
-                    column_info = cols_display
             else:
                 # Legacy fallback
                 if t.get("metric"):
                     source_info = f"📊 {t.get('metric')}"
-                    column_info = "-"
                 else:
                     source_info = t.get("database", "-")
-                    column_info = t.get("column", "-")
             
             # Extraire low/high pour les tests range
             range_info = "-"
@@ -3326,23 +3284,8 @@ def register_build_callbacks(app):
                 low_val = spec.get("low") if spec.get("low") is not None else t.get("low", "?")
                 high_val = spec.get("high") if spec.get("high") is not None else t.get("high", "?")
                 range_info = f"[{low_val}, {high_val}]"
-            elif t.get("type") == "test.interval_check":
+            elif t.get("type") == "interval_check":
                 spec = t.get("specific") or {}
-                mode = spec.get("target_mode") or t.get("mode")
-                if mode == "metric_value":
-                    metric_id = spec.get("metric_id") or t.get("metric") or "-"
-                    source_info = f"📊 {metric_id}"
-                    column_info = "-"
-                else:
-                    database = spec.get("database") or t.get("database") or "-"
-                    cols = spec.get("columns") or t.get("columns") or []
-                    if isinstance(cols, (list, tuple, set)):
-                        cols_display = ", ".join(str(c) for c in cols if c not in (None, "")) or "-"
-                    else:
-                        cols_display = str(cols) if cols else "-"
-                    source_info = database
-                    column_info = cols_display
-
                 # Utiliser la fonction dédiée pour formater les bornes avec l'arborescence des règles
                 range_info = format_interval_bounds_display(spec)
             
@@ -3382,7 +3325,6 @@ def register_build_callbacks(app):
                 html.Td(test_id),
                 html.Td(t.get("type", "N/A")),
                 html.Td(source_info),
-                html.Td(column_info),
                 html.Td(severity_display or "-"),
                 html.Td(range_info),
                 html.Td(description),
@@ -3825,109 +3767,485 @@ def register_build_callbacks(app):
         """Ouvre/ferme le modal d'aide pour les tests"""
         return not is_open
 
-    # ===== Run DQ (simple runner invocation) =====
-
+    # ===== Publier et Run DQ depuis le Builder =====
+    
+    @app.callback(
+        Output("publish-status", "children"),
+        Input("publish", "n_clicks"),
+        State("store_datasets", "data"),
+        State("store_metrics", "data"),
+        State("store_tests", "data"),
+        State("store_scripts", "data"),
+        State("url", "search"),
+        State("run-context-store", "data"),
+        prevent_initial_call=True
+    )
+    def publish_dq_config(n_clicks, datasets, metrics, tests, scripts, search, run_context):
+        """Publie la configuration DQ dans un fichier YAML"""
+        if not n_clicks:
+            raise PreventUpdate
+        
+        try:
+            # Générer la configuration
+            q = parse_query(search or "")
+            cfg = cfg_template()
+            
+            # Context avec quarter
+            quarter_value = (run_context or {}).get("quarter") if run_context else None
+            cfg["context"] = {
+                "stream": q.get("stream"),
+                "project": q.get("project"),
+                "zone": q.get("zone"),
+                "quarter": quarter_value
+            }
+            
+            cfg["databases"] = datasets or []
+            
+            # Convertir metrics en dictionnaire
+            metrics_dict = {}
+            for m in (metrics or []):
+                metric_id = m.get("id")
+                if metric_id:
+                    metric_copy = {k: v for k, v in m.items() if k != "id"}
+                    if "params" in metric_copy:
+                        metric_copy["params"] = {k: v for k, v in metric_copy["params"].items() 
+                                                if k not in ["dataset", "column", "where", "expr"]}
+                    metrics_dict[metric_id] = metric_copy
+            
+            # Convertir tests en dictionnaire
+            tests_dict = {}
+            for t in (tests or []):
+                test_id = t.get("id")
+                if test_id:
+                    test_copy = {k: v for k, v in t.items() if k != "id"}
+                    if "specific" in test_copy:
+                        test_copy["specific"] = {k: v for k, v in test_copy["specific"].items() 
+                                               if k not in ["lower_enabled", "upper_enabled"]}
+                    tests_dict[test_id] = test_copy
+            
+            cfg["metrics"] = metrics_dict
+            cfg["tests"] = tests_dict
+            cfg["scripts"] = scripts or []
+            
+            # Créer un nom de fichier basé sur le contexte
+            stream = q.get("stream") or "unknown"
+            project = q.get("project") or "unknown"
+            zone = q.get("zone") or "unknown"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"dq_{stream}_{project}_{zone}_{timestamp}.yaml"
+            
+            # Sauvegarder dans dq/definitions/
+            output_dir = os.path.join(os.getcwd(), "dq", "definitions")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, filename)
+            
+            with open(output_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
+            
+            return dbc.Alert([
+                html.Div([
+                    html.Strong("✅ Configuration publiée avec succès !"),
+                    html.Br(),
+                    html.Small(f"Fichier: {filename}"),
+                    html.Br(),
+                    html.Small(f"Chemin: {output_path}")
+                ])
+            ], color="success", className="mt-3")
+            
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            return dbc.Alert([
+                html.Div(f"❌ Erreur lors de la publication: {e}"),
+                html.Pre(tb, style={"whiteSpace": "pre-wrap", "fontSize": "10px"})
+            ], color="danger", className="mt-3")
+    
     @app.callback(
         Output("dq-run-results", "children"),
+        Output("download-dq-results", "data"),
         Input("run-dq", "n_clicks"),
         State("store_datasets", "data"),
         State("store_metrics", "data"),
         State("store_tests", "data"),
+        State("store_scripts", "data"),
+        State("url", "search"),
+        State("run-context-store", "data"),
         prevent_initial_call=True
     )
-    def run_dq(n, datasets, metrics, tests):
-        """Exécute le runner DQ sur un DataFrame d'exemple et affiche les résultats."""
-        if not n:
-            return no_update
-        # Build config using sanitized structures
-        cfg = {"metrics": sanitize_metrics(metrics or []), "tests": sanitize_tests(tests or [])}
-
-        # Ensure plugins are discovered (populates REGISTRY)
+    def run_dq_from_builder(n_clicks, datasets, metrics, tests, scripts, search, run_context):
+        """Execute la configuration DQ sur les données et génère un fichier Excel"""
+        if not n_clicks:
+            raise PreventUpdate
+        
         try:
-            ensure_plugins_discovered()
-        except Exception:
-            # best-effort continue
-            pass
-
-        # Build a Spark catalog from the datasets store (alias -> source)
-        catalog = {}
-        try:
-            if datasets and isinstance(datasets, list):
-                for item in datasets:
-                    if isinstance(item, dict):
-                        alias = item.get("alias") or item.get("dataset")
-                        src = item.get("dataset") or item.get("source")
-                        if alias and src:
-                            catalog[alias] = src
-                    elif isinstance(item, str):
-                        # if only name provided, use it as both alias and source
-                        catalog[item] = item
-        except Exception:
-            catalog = {}
-
-        # Réutiliser la session Spark si elle a été instanciée au startup (app.server.spark_context)
-        spark_ctx = getattr(app.server, "spark_context", None)
-        if spark_ctx is None:
+            from src.core.executor import execute
+            from src.core.parser import build_execution_plan
+            from src.core.models_inventory import Inventory
+            from src.core.models_dq import DQDefinition
+            from src.core.simple_excel_export import export_run_result_to_excel
+            from pathlib import Path
+            import pandas as pd
+            import yaml
+            import tempfile
+            import os
+            
+            # Charger l'inventaire
+            inv_path = Path("config/inventory.yaml")
+            inv_data = yaml.safe_load(inv_path.read_text(encoding="utf-8"))
+            inv = Inventory(**inv_data)
+            
+            # Générer la configuration
+            q = parse_query(search or "")
+            cfg = cfg_template()
+            
+            quarter_value = (run_context or {}).get("quarter") if run_context else None
+            cfg["context"] = {
+                "stream": q.get("stream"),
+                "project": q.get("project"),
+                "zone": q.get("zone"),
+                "quarter": quarter_value
+            }
+            
+            cfg["databases"] = datasets or []
+            
+            # Convertir metrics
+            metrics_dict = {}
+            for m in (metrics or []):
+                metric_id = m.get("id")
+                if metric_id:
+                    metric_copy = {k: v for k, v in m.items() if k != "id"}
+                    metrics_dict[metric_id] = metric_copy
+            
+            # Convertir tests
+            tests_dict = {}
+            for t in (tests or []):
+                test_id = t.get("id")
+                if test_id:
+                    test_copy = {k: v for k, v in t.items() if k != "id"}
+                    if "specific" in test_copy:
+                        test_copy["specific"] = {k: v for k, v in test_copy["specific"].items() 
+                                               if k not in ["lower_enabled", "upper_enabled"]}
+                    tests_dict[test_id] = test_copy
+            
+            cfg["metrics"] = metrics_dict
+            cfg["tests"] = tests_dict
+            cfg["scripts"] = scripts or []
+            
+            # Créer un objet DQDefinition
+            dq = DQDefinition(**cfg)
+            
+            # Construire le plan et exécuter (même système que le runner DQ normal)
+            plan = build_execution_plan(inv, dq, overrides={})
+            
+            # Utiliser LocalReader qui sait résoudre les alias via plan.alias_map
+            from src.core.connectors import LocalReader
+            run_result = execute(plan, loader=LocalReader(plan.alias_map), investigate=False)
+            
+            # Générer un fichier Excel temporaire
+            stream = q.get("stream", "unknown")
+            project = q.get("project", "unknown")
+            zone = q.get("zone", "unknown")
+            dq_id = f"{stream}_{project}_{zone}"
+            
+            # Créer un fichier temporaire pour l'export
+            temp_dir = tempfile.gettempdir()
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"dq_results_{dq_id}_{timestamp}.xlsx"
+            temp_path = os.path.join(temp_dir, filename)
+            
+            # Exporter vers Excel (même fonction que le Runner)
+            export_run_result_to_excel(
+                run_result=run_result,
+                output_path=temp_path,
+                dq_id=dq_id,
+                quarter=quarter_value,
+                project=project
+            )
+            
+            # Lire le fichier pour le téléchargement
+            with open(temp_path, 'rb') as f:
+                excel_content = f.read()
+            
+            # Nettoyer le fichier temporaire
             try:
-                spark_ctx = SparkDQContext(catalog=catalog)
-                # attach for reuse later
-                app.server.spark_context = spark_ctx
-            except Exception as e:
-                return dbc.Alert(f"Erreur initialisation Spark: {e}", color="danger")
-
-        # Create an ExecutionContext that uses SparkDQContext as loader
-        def loader(alias: str):
-            return spark_ctx.load(alias)
-
-        exec_ctx = ExecutionContext(loader)
-
-        # Convert cfg to the shape expected by the sequencer:
-        # metrics already have 'params' from sanitize_metrics()
-        plan_cfg = {
-            "metrics": cfg.get("metrics", []),
-            "tests": cfg.get("tests", [])
-        }
-
-        # Build execution plan and execute
-        try:
-            plan = build_execution_plan(plan_cfg)
-            executor = Executor(exec_ctx)
-            exec_result = executor.execute(plan)
-
-            # Build a friendly summary of results
-            out = {"metrics": {}, "tests": {}, "summary": exec_result.summary()}
-            for sr in exec_result.step_results:
-                sid = sr.step.id
-                entry = {
-                    "status": sr.status.value,
-                    "message": sr.result.message if sr.result and getattr(sr.result, 'message', None) else None,
-                }
-                # value/dataframe when present
-                if sr.result:
-                    try:
-                        if getattr(sr.result, 'value', None) is not None:
-                            entry["value"] = sr.result.value
-                        df = sr.result.get_dataframe() if hasattr(sr.result, 'get_dataframe') else None
-                        if df is not None:
-                            entry["dataframe_columns"] = list(df.columns)
-                            entry["dataframe_rows"] = len(df)
-                    except Exception:
-                        # ignore serialization issues
-                        entry["value"] = str(sr.result.value) if getattr(sr.result, 'value', None) is not None else None
-
-                if sr.step.kind.value == "metric":
-                    out["metrics"][sid] = entry
-                else:
-                    out["tests"][sid] = entry
-
-            pretty = json.dumps(out, ensure_ascii=False, indent=2)
-            return dbc.Card([
-                dbc.CardHeader("Résultats Run DQ (Spark)"),
-                dbc.CardBody(html.Pre(pretty, style={"background": "#111", "color": "#0f0", "padding": "0.75rem"}))
-            ])
+                os.remove(temp_path)
+            except:
+                pass
+            
+            # Préparer le résumé pour l'affichage
+            total_tests = len(run_result.tests)
+            passed_tests = sum(1 for t in run_result.tests.values() if t.passed)
+            failed_tests = total_tests - passed_tests
+            
+            status_color = "success" if failed_tests == 0 else "danger"
+            status_icon = "check-circle-fill" if failed_tests == 0 else "x-circle-fill"
+            
+            display = dbc.Card([
+                dbc.CardHeader([
+                    html.I(className=f"bi bi-{status_icon} me-2"),
+                    "Résultats de l'exécution DQ"
+                ], className=f"bg-{status_color} text-white"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.H6("Métriques"),
+                            html.H3(len(run_result.metrics), className="text-primary")
+                        ], md=3),
+                        dbc.Col([
+                            html.H6("Tests Total"),
+                            html.H3(total_tests, className="text-info")
+                        ], md=3),
+                        dbc.Col([
+                            html.H6("Tests Réussis"),
+                            html.H3(passed_tests, className="text-success")
+                        ], md=3),
+                        dbc.Col([
+                            html.H6("Tests Échoués"),
+                            html.H3(failed_tests, className="text-danger")
+                        ], md=3)
+                    ]),
+                    html.Hr(),
+                    dbc.Alert([
+                        html.I(className="bi bi-download me-2"),
+                        f"Le fichier Excel '{filename}' a été généré et va être téléchargé automatiquement."
+                    ], color="info", className="mb-0")
+                ])
+            ], className="mt-3")
+            
+            return display, dcc.send_bytes(excel_content, filename)
+            
         except Exception as e:
+            import traceback
             tb = traceback.format_exc()
             return dbc.Alert([
-                html.Div(f"Erreur lors du Run DQ: {e}"),
+                html.Div(f"❌ Erreur lors de l'exécution: {e}"),
                 html.Pre(tb, style={"whiteSpace": "pre-wrap", "fontSize": "10px"})
-            ], color="danger")
+            ], color="danger", className="mt-3"), no_update
+
+    # ===== Callbacks pour les Scripts =====
+    
+    @app.callback(
+        Output("script-picker", "options"),
+        Input("url", "search"),
+        prevent_initial_call=False
+    )
+    def update_script_options(search):
+        """Met à jour les scripts disponibles selon le contexte"""
+        from dq.scripts.script_loader import get_script_options
+        
+        q = parse_query(search or "")
+        stream = q.get("stream")
+        project = q.get("project")
+        zone = q.get("zone")
+        
+        options = get_script_options(stream=stream, project=project, zone=zone)
+        
+        return options
+    
+    @app.callback(
+        Output("store_scripts", "data"),
+        Output("save-scripts-status", "children"),
+        Input("save-scripts", "n_clicks"),
+        State("script-picker", "value"),
+        State("url", "search"),
+        prevent_initial_call=True
+    )
+    def save_scripts(n_clicks, selected_scripts, search):
+        """Enregistre les scripts sélectionnés"""
+        from dq.scripts.script_loader import get_script_by_id
+        
+        if not n_clicks:
+            raise PreventUpdate
+        
+        q = parse_query(search or "")
+        stream = q.get("stream")
+        project = q.get("project")
+        zone = q.get("zone")
+        
+        scripts_data = []
+        
+        if selected_scripts:
+            for script_id in selected_scripts:
+                metadata = get_script_by_id(script_id, stream, project, zone)
+                
+                if metadata:
+                    scripts_data.append({
+                        "id": metadata.id,
+                        "label": metadata.label,
+                        "path": metadata.path,
+                        "enabled": True,
+                        "execute_on": metadata.execute_on,
+                        "params": metadata.params
+                    })
+        
+        status = f"✅ {len(scripts_data)} script(s) enregistré(s)" if scripts_data else "Aucun script sélectionné"
+        
+        return scripts_data, status
+    
+    @app.callback(
+        Output("selected-scripts-display", "children"),
+        Input("store_scripts", "data")
+    )
+    def display_selected_scripts(scripts_data):
+        """Affiche les scripts sélectionnés"""
+        if not scripts_data:
+            return html.Div("Aucun script sélectionné", className="text-muted")
+        
+        cards = []
+        for script in scripts_data:
+            cards.append(
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.Strong(script.get("label", script.get("id"))),
+                        dbc.Badge(
+                            script.get("execute_on", "post_dq"),
+                            color="info" if script.get("execute_on") == "post_dq" else "warning",
+                            className="ms-2"
+                        )
+                    ]),
+                    dbc.CardBody([
+                        html.Small(f"ID: {script.get('id')}", className="d-block text-muted"),
+                        html.Small(f"Path: {script.get('path')}", className="d-block text-muted"),
+                        html.Small(f"Params: {json.dumps(script.get('params', {}))}", className="d-block text-muted mt-1")
+                    ])
+                ], className="mb-2")
+            )
+        
+        return html.Div(cards)
+
+    # ===== Télécharger le résumé DQ =====
+    
+    @app.callback(
+        Output("download-summary", "data"),
+        Input("download-summary-btn", "n_clicks"),
+        State("store_datasets", "data"),
+        State("store_metrics", "data"),
+        State("store_tests", "data"),
+        State("store_scripts", "data"),
+        State("url", "search"),
+        State("run-context-store", "data"),
+        prevent_initial_call=True
+    )
+    def download_dq_summary(n_clicks, datasets, metrics, tests, scripts, search, run_context):
+        """Télécharge un résumé visuel de la configuration DQ au format Markdown"""
+        if not n_clicks:
+            raise PreventUpdate
+        
+        try:
+            # Générer la configuration
+            q = parse_query(search or "")
+            cfg = cfg_template()
+            
+            # Context avec quarter
+            quarter_value = (run_context or {}).get("quarter") if run_context else None
+            cfg["context"] = {
+                "stream": q.get("stream"),
+                "project": q.get("project"),
+                "zone": q.get("zone"),
+                "quarter": quarter_value
+            }
+            
+            cfg["datasets"] = datasets or []
+            cfg["metrics"] = metrics or []
+            cfg["tests"] = tests or []
+            cfg["scripts"] = scripts or []
+            
+            # Créer le résumé Markdown
+            lines = []
+            lines.append("# 📊 Résumé de la Configuration Data Quality\n")
+            lines.append(f"**Date de génération:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            lines.append("---\n")
+            
+            # Context
+            lines.append("## 🎯 Contexte\n")
+            ctx = cfg.get("context", {})
+            lines.append(f"- **Stream:** {ctx.get('stream') or 'N/A'}")
+            lines.append(f"- **Project:** {ctx.get('project') or 'N/A'}")
+            lines.append(f"- **Zone:** {ctx.get('zone') or 'N/A'}")
+            lines.append(f"- **Quarter:** {ctx.get('quarter') or 'N/A'}\n")
+            
+            # Datasets
+            lines.append("## 📁 Datasets\n")
+            if datasets:
+                for i, ds in enumerate(datasets, 1):
+                    lines.append(f"### {i}. {ds.get('alias', 'Sans alias')}")
+                    lines.append(f"- **Dataset:** `{ds.get('dataset', 'N/A')}`")
+                    if ds.get('filters'):
+                        lines.append(f"- **Filtres:** {', '.join([f.get('id', 'N/A') for f in ds['filters']])}")
+                    lines.append("")
+            else:
+                lines.append("*Aucun dataset configuré*\n")
+            
+            # Metrics
+            lines.append("## 📈 Métriques\n")
+            if metrics:
+                for i, m in enumerate(metrics, 1):
+                    lines.append(f"### {i}. {m.get('id', 'N/A')} ({m.get('type', 'N/A')})")
+                    lines.append(f"- **Type:** {m.get('type', 'N/A')}")
+                    if m.get('column'):
+                        lines.append(f"- **Colonne:** `{m['column']}`")
+                    if m.get('dataset'):
+                        lines.append(f"- **Dataset:** {m['dataset']}")
+                    # Afficher autres paramètres
+                    skip_keys = {'id', 'type', 'column', 'dataset'}
+                    other_params = {k: v for k, v in m.items() if k not in skip_keys}
+                    if other_params:
+                        lines.append(f"- **Paramètres:** {json.dumps(other_params, ensure_ascii=False)}")
+                    lines.append("")
+            else:
+                lines.append("*Aucune métrique configurée*\n")
+            
+            # Tests
+            lines.append("## ✅ Tests\n")
+            if tests:
+                for i, t in enumerate(tests, 1):
+                    lines.append(f"### {i}. {t.get('id', 'N/A')} ({t.get('type', 'N/A')})")
+                    lines.append(f"- **Type:** {t.get('type', 'N/A')}")
+                    if t.get('metric'):
+                        lines.append(f"- **Métrique:** {t['metric']}")
+                    # Afficher autres paramètres
+                    skip_keys = {'id', 'type', 'metric'}
+                    other_params = {k: v for k, v in t.items() if k not in skip_keys}
+                    if other_params:
+                        lines.append(f"- **Paramètres:** {json.dumps(other_params, ensure_ascii=False)}")
+                    lines.append("")
+            else:
+                lines.append("*Aucun test configuré*\n")
+            
+            # Scripts
+            lines.append("## 🔧 Scripts\n")
+            if scripts:
+                for i, s in enumerate(scripts, 1):
+                    lines.append(f"### {i}. {s.get('label', s.get('id', 'N/A'))}")
+                    lines.append(f"- **ID:** {s.get('id', 'N/A')}")
+                    lines.append(f"- **Exécution:** {s.get('execute_on', 'post_dq')}")
+                    lines.append(f"- **Path:** `{s.get('path', 'N/A')}`")
+                    if s.get('params'):
+                        lines.append(f"- **Paramètres:** {json.dumps(s['params'], ensure_ascii=False)}")
+                    lines.append("")
+            else:
+                lines.append("*Aucun script configuré*\n")
+            
+            # Statistiques
+            lines.append("---")
+            lines.append("## 📊 Statistiques\n")
+            lines.append(f"- **Datasets:** {len(datasets or [])}")
+            lines.append(f"- **Métriques:** {len(metrics or [])}")
+            lines.append(f"- **Tests:** {len(tests or [])}")
+            lines.append(f"- **Scripts:** {len(scripts or [])}")
+            
+            # Générer le nom de fichier
+            stream = ctx.get('stream', 'unknown')
+            project = ctx.get('project', 'unknown')
+            zone = ctx.get('zone', 'unknown')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"dq_summary_{stream}_{project}_{zone}_{timestamp}.md"
+            
+            content = "\n".join(lines)
+            
+            return dict(content=content, filename=filename)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise PreventUpdate

@@ -160,19 +160,39 @@ def register_dq_runner_callbacks(app):
                 "timestamp": start_time.isoformat(),
                 "metrics": {k: {"value": v.value, "passed": v.passed, "message": v.message} for k, v in run_result.metrics.items()},
                 "tests": {k: {"value": v.value, "passed": v.passed, "message": v.message, "meta": v.meta} for k, v in run_result.tests.items()},
+                "scripts": run_result.scripts,  # Ajouter les résultats des scripts
                 "investigations": run_result.investigations,
                 "investigation_report": run_result.investigation_report
             }
             
             # store on server-side cache for export endpoint
             try:
-                EXPORT_CACHE[run_result.run_id] = store_data
-                print(f"[DEBUG] Stored run_id={run_result.run_id} in EXPORT_CACHE")
+                # Extraire quarter et project du context de manière sûre
+                quarter_val = None
+                project_val = None
+                if dq.context:
+                    try:
+                        quarter_val = getattr(dq.context, 'quarter', None)
+                        project_val = getattr(dq.context, 'project', None)
+                    except:
+                        pass
+                
+                # Stocker à la fois les données sérialisées ET le run_result complet pour l'export Excel
+                cache_entry = {
+                    **store_data,
+                    "run_result": run_result,  # Objet complet pour export_run_result_to_excel
+                    "quarter": quarter_val,
+                    "project": project_val
+                }
+                EXPORT_CACHE[run_result.run_id] = cache_entry
+                print(f"[DEBUG] ✅ Stored run_id={run_result.run_id} in EXPORT_CACHE")
+                print(f"[DEBUG] Cache entry has run_result: {cache_entry.get('run_result') is not None}")
+                print(f"[DEBUG] run_result type: {type(cache_entry.get('run_result'))}")
                 print(f"[DEBUG] EXPORT_CACHE now contains: {list(EXPORT_CACHE.keys())}")
             except Exception as e:
-                print(f"[ERROR] Failed to store in EXPORT_CACHE: {e}")
-                # If anything goes wrong saving the cache, continue without blocking the UI
-                pass
+                print(f"[ERROR] ❌ Failed to store in EXPORT_CACHE: {e}")
+                import traceback as tb
+                tb.print_exc()
 
             # Construire l'affichage des résultats
             return _build_results_display(run_result, dq_id, duration, investigate), False, store_data
@@ -345,6 +365,48 @@ def register_dq_runner_callbacks(app):
                 }
             }
             zip_file.writestr("results.json", json.dumps(results, indent=2))
+            
+            # Générer le fichier Excel et l'ajouter au ZIP
+            print(f"[DEBUG export_dq_results] Generating Excel file...")
+            print(f"[DEBUG export_dq_results] export_data keys: {list(export_data.keys())}")
+            run_result = export_data.get("run_result")
+            print(f"[DEBUG export_dq_results] run_result is None: {run_result is None}")
+            if run_result:
+                try:
+                    from src.core.simple_excel_export import export_run_result_to_excel
+                    import tempfile
+                    import os
+                    
+                    # Créer un fichier temporaire pour l'Excel
+                    temp_dir = tempfile.gettempdir()
+                    excel_filename = f"dq_results_{export_data['dq_id']}.xlsx"
+                    temp_excel_path = os.path.join(temp_dir, excel_filename)
+                    
+                    # Générer l'Excel
+                    export_run_result_to_excel(
+                        run_result=run_result,
+                        output_path=temp_excel_path,
+                        dq_id=export_data["dq_id"],
+                        quarter=export_data.get("quarter"),
+                        project=export_data.get("project")
+                    )
+                    
+                    # Ajouter l'Excel au ZIP
+                    zip_file.write(temp_excel_path, excel_filename)
+                    print(f"[DEBUG export_dq_results] Excel file added to ZIP: {excel_filename}")
+                    
+                    # Nettoyer le fichier temporaire
+                    try:
+                        os.remove(temp_excel_path)
+                    except:
+                        pass
+                        
+                except Exception as excel_error:
+                    print(f"[ERROR export_dq_results] Failed to generate Excel: {excel_error}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[WARNING export_dq_results] No run_result found in export_data")
 
             if export_data.get("investigation_report"):
                 zip_file.writestr("investigation_report.txt", export_data["investigation_report"])
@@ -440,6 +502,9 @@ def _build_results_display(run_result, dq_id, duration, investigate):
             ])
         ], className="shadow-sm mb-3"),
         
+        # Résultats des scripts si présents
+        _build_scripts_section(run_result) if run_result.scripts else None,
+        
         # Investigations si présentes
         _build_investigations_section(run_result) if investigate else None
     ])
@@ -510,6 +575,60 @@ def _build_tests_table(tests, investigate):
         ])),
         html.Tbody(rows)
     ], bordered=True, hover=True, responsive=True, size="sm")
+
+
+def _build_scripts_section(run_result):
+    """Construit la section des scripts exécutés"""
+    scripts = getattr(run_result, 'scripts', {})
+    
+    if not scripts:
+        return None
+    
+    rows = []
+    for script_id, script_result in scripts.items():
+        success = script_result.get('success', False)
+        status_badge = dbc.Badge(
+            "✓ SUCCESS" if success else "✗ FAILED",
+            color="success" if success else "danger"
+        )
+        
+        metrics_count = len(script_result.get('metrics', {}))
+        tests_count = len(script_result.get('tests', {}))
+        error_msg = script_result.get('error', '')
+        
+        rows.append(html.Tr([
+            html.Td(script_id, className="font-monospace small"),
+            html.Td(status_badge, className="text-center"),
+            html.Td(f"{metrics_count} métriques", className="small"),
+            html.Td(f"{tests_count} tests", className="small"),
+            html.Td(
+                html.Small(error_msg, className="text-danger") if error_msg else "-",
+                className="text-muted"
+            )
+        ]))
+    
+    table = dbc.Table([
+        html.Thead(html.Tr([
+            html.Th("Script ID"),
+            html.Th("Status", className="text-center"),
+            html.Th("Métriques"),
+            html.Th("Tests"),
+            html.Th("Erreur")
+        ])),
+        html.Tbody(rows)
+    ], bordered=True, hover=True, responsive=True, size="sm")
+    
+    return dbc.Card([
+        dbc.CardHeader([
+            html.I(className="bi bi-file-code me-2"),
+            html.Strong(f"Scripts ({len(scripts)})")
+        ]),
+        dbc.CardBody([
+            table,
+            html.Small("ℹ️ Les métriques et tests des scripts sont intégrés dans les sections ci-dessus", 
+                      className="text-muted d-block mt-2")
+        ])
+    ], className="shadow-sm mb-3")
 
 
 def _build_investigations_section(run_result):

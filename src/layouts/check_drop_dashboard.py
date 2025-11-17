@@ -32,26 +32,6 @@ def check_drop_dashboard_page():
                         "Déposer mes Données"
                     ], href="/channel-drop", color="primary", size="lg", className="mt-3")
                 ])
-            ], className="shadow-sm hover-shadow"), md=6),
-            
-            dbc.Col(dbc.Card([
-                dbc.CardHeader([
-                    html.I(className="bi bi-file-earmark-text me-2"),
-                    "Drop & DQ Manuel"
-                ], className="bg-warning text-dark"),
-                dbc.CardBody([
-                    html.P("Mode avancé : déposez et lancez des contrôles DQ manuellement."),
-                    html.Ul([
-                        html.Li("Dépôt de fichiers manuel"),
-                        html.Li("Sélection des contrôles"),
-                        html.Li("Configuration personnalisée"),
-                        html.Li("Rapports détaillés")
-                    ]),
-                    dbc.Button([
-                        html.I(className="bi bi-gear me-2"),
-                        "Mode Manuel"
-                    ], href="/drop-dq", color="warning", outline=True, size="lg", className="mt-3")
-                ])
-            ], className="shadow-sm"), md=6)
+            ], className="shadow-sm hover-shadow"), md=12)
         ], className="g-4")
     ], fluid=True, className="py-4")

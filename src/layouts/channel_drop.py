@@ -32,27 +32,6 @@ def channel_drop_page():
             ], width=12)
         ]),
         
-        # Sélecteur d'utilisateur (DEMO uniquement)
-        dbc.Row([
-            dbc.Col([
-                dbc.Alert([
-                    html.Div([
-                        html.I(className="bi bi-person-circle me-2"),
-                        html.Strong("Mode Démonstration - Sélectionnez votre profil utilisateur")
-                    ], className="mb-2"),
-                    dcc.Dropdown(
-                        id="demo-user-selector",
-                        placeholder="Choisissez un utilisateur pour voir les canaux autorisés...",
-                        className="mb-2"
-                    ),
-                    html.Small([
-                        html.I(className="bi bi-info-circle me-1"),
-                        "En production, l'utilisateur serait authentifié automatiquement (SSO, LDAP, etc.)"
-                    ], className="text-muted")
-                ], color="info", className="mb-4")
-            ], width=12)
-        ]),
-        
         # Stores
         dcc.Store(id="selected-channel-store"),
         dcc.Store(id="file-mappings-store", data=[]),
@@ -189,14 +168,14 @@ def channel_drop_page():
                     html.I(className="bi bi-check-circle-fill text-success", 
                           style={"fontSize": "4rem"}),
                 ], className="text-center mb-4"),
-                html.H5("Votre dépôt a été enregistré", className="text-center mb-3"),
+                html.H5("Votre dépôt a été testé", className="text-center mb-3"),
                 html.P([
                     "Votre dépôt est en cours de traitement. Vous recevrez un rapport "
                     "de contrôle qualité par email d'ici quelques minutes."
                 ], className="text-center text-muted mb-3"),
                 html.Div(id="submission-id-display", className="text-center"),
                 html.P([
-                    html.Strong("Numéro de suivi: "),
+                    html.Strong("Decision automatique sur le dépot: "),
                     html.Span(id="tracking-number-display", className="text-primary")
                 ], className="text-center"),
                 html.Hr(),
@@ -207,8 +186,8 @@ def channel_drop_page():
             ])
         ], id="success-modal", centered=True),
         
-        # Composant de téléchargement
-        dcc.Download(id="download-dq-report"),
+        # Composant de téléchargement unique (réutilisé pour tous les rapports)
+        dcc.Download(id="download-report"),
         
         # Alert pour les erreurs
         html.Div(id="drop-alert-container", className="mt-3")

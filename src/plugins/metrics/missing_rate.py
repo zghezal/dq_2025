@@ -3,9 +3,17 @@ from __future__ import annotations
 
 from typing import Optional, List, Union, Tuple
 from pydantic import BaseModel, Field
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
 import pandas as pd
+
+# Import optionnel de PySpark
+try:
+    from pyspark.sql import functions as F
+    from pyspark.sql import types as T
+    PYSPARK_AVAILABLE = True
+except ImportError:
+    PYSPARK_AVAILABLE = False
+    F = None
+    T = None
 
 from src.plugins.base import BasePlugin, Result, register
 from src.plugins.base_models import CommonArgs

@@ -112,7 +112,9 @@ def safe_id(s):
 
 def cfg_template():
     """Template de configuration DQ"""
+    import time
     return {
+        "id": f"dq_{int(time.time())}",  # Générer un ID unique basé sur timestamp
         "version": "1.0",
         "globals": {
             "default_severity": "medium",
@@ -550,7 +552,19 @@ def validate_cfg(cfg: dict) -> list:
     issues = []
     metrics = cfg.get("metrics", []) or []
     tests = cfg.get("tests", []) or []
-    metric_ids = [m.get("id") for m in metrics if m.get("id")]
+    
+    # Handle both list and dict formats
+    if isinstance(metrics, dict):
+        metric_list = [{"id": k, **v} for k, v in metrics.items()]
+        metric_ids = list(metrics.keys())
+    else:
+        metric_list = metrics
+        metric_ids = [m.get("id") for m in metrics if m.get("id")]
+    
+    if isinstance(tests, dict):
+        test_list = [{"id": k, **v} for k, v in tests.items()]
+    else:
+        test_list = tests
 
     # Use registry meta to validate metrics where possible
     try:
@@ -558,12 +572,12 @@ def validate_cfg(cfg: dict) -> list:
     except Exception:
         REG_METRICS = {}
 
-    for m in metrics:
+    for m in metric_list:
         mtype = m.get("type")
         meta = REG_METRICS.get(mtype, {})
         issues.extend(validate_metric_against_meta(m, meta))
 
-    for t in tests:
+    for t in test_list:
         issues.extend(validate_test(t, metric_ids))
 
     return issues

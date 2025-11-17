@@ -1,0 +1,65 @@
+id: "sales_advanced_dq"
+label: "Sales DQ avec script avancé d'analyse"
+version: "1.0"
+
+context:
+  stream: "A"
+  project: "P1"
+  zone: "raw"
+  quarter: "2025Q4"
+
+databases:
+  - alias: sales_2024
+    dataset: sales_2024
+
+metrics:
+  M-001:
+    type: missing_rate
+    general:
+      export: true
+    nature:
+      name: "Missing Rate - Quantity"
+    identification:
+      metric_id: "M-001"
+    specific:
+      dataset: sales_2024
+      column: quantity
+
+  M-002:
+    type: missing_rate
+    general:
+      export: true
+    nature:
+      name: "Missing Rate - Total"
+    identification:
+      metric_id: "M-002"
+    specific:
+      dataset: sales_2024
+      column: total
+
+tests:
+  T-001:
+    type: interval_check
+    nature:
+      name: "Interval Check - Missing Rate Quantity"
+    identification:
+      test_id: "T-001"
+      associated_metric_id: "M-001"
+    general:
+      criticality: high
+      on_fail: raise_alert
+    specific:
+      target_mode: metric_value
+      metric_id: "M-001"
+      lower: null
+      upper: 0.1
+
+scripts:
+  - id: "ADVANCED_SALES_ANALYSIS"
+    label: "Analyse avancée des ventes avec accès aux données"
+    path: "scripts/advanced_sales_dq.py"
+    enabled: true
+    execute_on: "post_dq"
+    params:
+      missing_rate_threshold: 0.05
+      check_negatives: true

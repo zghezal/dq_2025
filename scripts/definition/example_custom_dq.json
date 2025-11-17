@@ -1,0 +1,13 @@
+{
+  "id": "EXAMPLE_CUSTOM_DQ",
+  "label": "Exemple de tests personnalisés",
+  "description": "Script exemple montrant comment créer des tests DQ personnalisés avec différents types (seuil, règle métier, cohérence)",
+  "execute_on": "post_dq",
+  "criticality": "medium",
+  "params": {
+    "threshold": 0.95
+  },
+  "tags": ["example", "demo", "generic"],
+  "author": "DQ Team",
+  "version": "1.0"
+}

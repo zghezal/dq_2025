@@ -53,11 +53,13 @@ def register_navigation_callbacks(app):
     def display_page(pathname):
         """Router minimal: renvoie le layout correspondant au pathname."""
         clean_path = (pathname or "/").split("?")[0]
+        print(f"[DEBUG NAVIGATION] pathname={pathname}, clean_path={clean_path}")
         if clean_path in ["/", "", "/home"]:
             return home_page()
         if clean_path == "/dashboard":
             return dashboard_page()
         if clean_path == "/dq-editor-dashboard":
+            print("[DEBUG NAVIGATION] Retournant dq_management_dashboard_page()")
             return dq_management_dashboard_page()
         if clean_path == "/dq":
             return dq_page()
@@ -70,6 +72,7 @@ def register_navigation_callbacks(app):
         if clean_path == "/drop-dq":
             return drop_landing_page()
         if clean_path == "/check-drop-dashboard":
+            print("[DEBUG NAVIGATION] Retournant check_drop_dashboard_page()")
             return check_drop_dashboard_page()
         if clean_path == "/configs":
             return configs_page()
@@ -95,24 +98,30 @@ def register_navigation_callbacks(app):
             dbc.Alert("Page introuvable", color="warning")
         ], fluid=True)
 
+    print("[DEBUG] Enregistrement du callback home_navigation...")
     @app.callback(
         Output("url", "pathname", allow_duplicate=True),
-        Output("url", "search", allow_duplicate=True),
         Input("home-checkdrop-btn", "n_clicks"),
         Input("home-dqeditor-btn", "n_clicks"),
         prevent_initial_call=True
     )
-    def home_access_navigation(n_checkdrop, n_dqeditor):
-        """Navigation explicite pour les boutons de la page d'accueil."""
+    def home_navigation(n_check, n_editor):
+        """Navigation depuis la page d'accueil."""
+        print(f"[DEBUG HOME NAV] Callback appelé! n_check={n_check}, n_editor={n_editor}")
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update
-        triggered = ctx.triggered[0]["prop_id"].split(".")[0]
-        if triggered == "home-checkdrop-btn":
-            return "/check-drop-dashboard", ""
-        if triggered == "home-dqeditor-btn":
-            return "/dq-editor-dashboard", ""
-        return no_update, no_update
+            print("[DEBUG HOME NAV] Pas de trigger")
+            return no_update
+        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        print(f"[DEBUG HOME NAV] button_id={button_id}")
+        if button_id == "home-checkdrop-btn":
+            print("[DEBUG HOME NAV] Navigation vers /check-drop-dashboard")
+            return "/check-drop-dashboard"
+        if button_id == "home-dqeditor-btn":
+            print("[DEBUG HOME NAV] Navigation vers /dq-editor-dashboard")
+            return "/dq-editor-dashboard"
+        return no_update
+    print("[DEBUG] Callback home_navigation enregistré!")
 
     # Inventory helpers imports
     from src.inventory import get_zones, get_datasets_for_zone

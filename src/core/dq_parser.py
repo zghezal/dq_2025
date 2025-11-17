@@ -10,7 +10,8 @@ Structure:
     ├── globals: DQGlobals
     ├── databases: List[Database]
     ├── metrics: Dict[str, Metric]
-    └── tests: Dict[str, Test]
+    ├── tests: Dict[str, Test]
+    └── scripts: List[ScriptDefinition]
 """
 
 import yaml
@@ -18,6 +19,7 @@ import json
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 from dataclasses import dataclass, field
+from src.core.models_dq import ScriptDefinition
 
 
 @dataclass
@@ -321,6 +323,7 @@ class DQConfig:
     databases: List[Database] = field(default_factory=list)
     metrics: Dict[str, Metric] = field(default_factory=dict)
     tests: Dict[str, Test] = field(default_factory=dict)
+    scripts: List[ScriptDefinition] = field(default_factory=list)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DQConfig':
@@ -344,6 +347,11 @@ class DQConfig:
         for test_id, test_data in data.get('tests', {}).items():
             tests[test_id] = Test.from_dict(test_id, test_data)
         
+        # Parse scripts (liste comme dans DQDefinition)
+        scripts = []
+        for script_data in data.get('scripts', []):
+            scripts.append(ScriptDefinition(**script_data))
+        
         return cls(
             id=data.get('id', ''),
             label=data.get('label'),
@@ -352,7 +360,8 @@ class DQConfig:
             globals=globals_data,
             databases=databases,
             metrics=metrics,
-            tests=tests
+            tests=tests,
+            scripts=scripts
         )
     
     @classmethod

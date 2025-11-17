@@ -17,6 +17,7 @@ def build_page():
         dcc.Store(id="store_datasets", storage_type="session"),
         dcc.Store(id="store_metrics", storage_type="session"),
         dcc.Store(id="store_tests", storage_type="session"),
+        dcc.Store(id="store_scripts", storage_type="session"),  # Nouveau store pour les scripts
         dcc.Store(id="store_edit_metric", storage_type="session"),
         # Note: inventory-datasets-store est déclaré dans app.py pour éviter les duplications
         dcc.Store(id="dataset-schema-request", storage_type="memory"),
@@ -164,7 +165,7 @@ def build_page():
                                         options=[
                                             {"label": info.plugin_class.label, "value": pid}
                                             for pid, info in discover_all_plugins(verbose=False).items()
-                                            if info.category == "tests" and pid in {"test.interval_check"}
+                                            if info.category == "tests"
                                         ],
                                         placeholder="Choisir le test",
                                         clearable=False,
@@ -192,7 +193,36 @@ def build_page():
                 ], className="mt-3")
             ]),
 
-            # Onglet 4: Publication
+            # Onglet 4: Scripts
+            dbc.Tab(label="🔧 Scripts", tab_id="tab-scripts", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5("Scripts DQ Personnalisés", className="mb-3"),
+                        html.P("Les scripts permettent d'ajouter des tests personnalisés avec logique métier complexe.", className="text-muted"),
+                        
+                        html.Label("Scripts disponibles"),
+                        dcc.Dropdown(
+                            id="script-picker",
+                            options=[],
+                            multi=True,
+                            placeholder="Sélectionner des scripts",
+                            persistence=True,
+                            persistence_type="session"
+                        ),
+                        
+                        html.Div(id="scripts-list", className="mt-3"),
+                        
+                        html.Hr(className="my-3"),
+                        html.H6("Scripts sélectionnés", className="mb-2"),
+                        html.Div(id="selected-scripts-display", className="mt-2"),
+                        
+                        dbc.Button("✅ Enregistrer les scripts", id="save-scripts", color="primary", className="mt-3"),
+                        html.Div(id="save-scripts-status", className="text-success mt-2")
+                    ])
+                ], className="mt-3")
+            ]),
+
+            # Onglet 5: Publication
             dbc.Tab(label="🚀 Publication", tab_id="tab-publication", children=[
                 dbc.Card([
                     dbc.CardBody([
@@ -228,6 +258,9 @@ def build_page():
                         ),
                         dbc.Button("✅ Publier", id="publish", color="success", className="mt-3"),
                         dbc.Button("▶️ Run DQ", id="run-dq", color="primary", className="mt-3 ms-2"),
+                        dbc.Button("📄 Télécharger le résumé", id="download-summary-btn", color="info", className="mt-3 ms-2"),
+                        dcc.Download(id="download-summary"),
+                        dcc.Download(id="download-dq-results"),
                         html.Div(id="dq-run-results", className="mt-3"),
                         html.Div(id="publish-status", className="text-success mt-2")
                     ])

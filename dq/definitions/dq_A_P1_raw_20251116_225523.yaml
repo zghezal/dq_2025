@@ -1,0 +1,58 @@
+id: dq_1763330123
+version: '1.0'
+globals:
+  default_severity: medium
+  sample_size: 10
+  fail_fast: false
+  timezone: Europe/Paris
+context:
+  stream: A
+  project: P1
+  zone: raw
+  quarter: 2027Q2
+databases:
+- alias: sales_2024.csv
+  dataset: sales_2024.csv
+metrics:
+  M-001:
+    type: missing_rate
+    general:
+      export: true
+    nature:
+      name: Missing Rate
+      description: ''
+      preliminary_comments: ''
+    identification:
+      metric_id: M-001
+    specific:
+      dataset: sales_2024.csv
+tests:
+  P1_RAW_TEST_1:
+    type: interval_check
+    nature:
+      name: Interval Check
+    identification:
+      test_id: P1_RAW_TEST_1
+      control_name: Interval Check
+      control_id: P1_RAW_TEST_
+    general:
+      criticality: medium
+      on_fail: raise_alert
+      sample_on_fail: true
+    specific:
+      target_mode: metric_value
+      metric_id: M-001
+      columns: []
+      column_rules:
+      - columns:
+        - quantity_missing_rate
+        lower: null
+        upper: 1
+scripts:
+- id: EXAMPLE_CUSTOM_DQ
+  label: Exemple de tests personnalisés
+  path: scripts\definition\example_custom_dq.py
+  enabled: true
+  execute_on: post_dq
+  params:
+    threshold: 0.95

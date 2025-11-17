@@ -4,7 +4,7 @@ Gère la sélection de canal, le mapping de fichiers et la soumission.
 """
 
 import dash
-from dash import Input, Output, State, callback, html, dcc, no_update, ALL
+from dash import Input, Output, State, callback, html, dcc, no_update, ALL, MATCH
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import uuid
@@ -17,31 +17,15 @@ from src.auth.auth_demo import get_demo_users_list, get_user_permissions
 
 
 @callback(
-    Output('demo-user-selector', 'options'),
-    Input('interval-refresh-drop', 'n_intervals')
-)
-def load_demo_users(n_intervals):
-    """Charge la liste des utilisateurs de démo"""
-    return get_demo_users_list()
-
-
-@callback(
     Output('drop-channel-dropdown', 'options'),
-    Input('demo-user-selector', 'value'),
     Input('interval-refresh-drop', 'n_intervals')
 )
-def load_channel_options(selected_user, n_intervals):
-    """Charge les canaux actifs dans le dropdown selon l'utilisateur."""
+def load_channel_options(n_intervals):
+    """Charge les canaux actifs dans le dropdown."""
     manager = get_channel_manager()
     
-    # Si un utilisateur est sélectionné, filtrer les canaux
-    if selected_user:
-        user_email, user_groups = get_user_permissions(selected_user)
-        channels = manager.list_channels(active_only=True, user_email=user_email, user_groups=user_groups)
-    else:
-        # Par défaut, afficher tous les canaux publics
-        channels = manager.list_channels(active_only=True)
-        channels = [c for c in channels if c.is_public]
+    # Afficher tous les canaux actifs
+    channels = manager.list_channels(active_only=True)
     
     return [
         {'label': f"{ch.name} ({ch.team_name})", 'value': ch.channel_id}
@@ -303,44 +287,144 @@ def submit_drop(n_clicks, channel_id, submitter_name, submitter_email, file_path
     try:
         processed = processor.process_submission(submission)
         
-        # Modal de succès
-        tracking_display = html.Div([
-            html.H4(submission_id, className="text-primary mb-3"),
-            html.P("Votre soumission a été enregistrée et est en cours de traitement."),
-            html.P([
-                "Vous recevrez un email à ",
-                html.Strong(submitter_email),
-                " avec les résultats de l'analyse qualité."
-            ]),
-            html.Hr(),
-            html.Small([
-                "Statut actuel: ",
-                html.Span(
-                    processed.status.value.upper(),
-                    className=f"badge bg-{'success' if processed.status == SubmissionStatus.DQ_SUCCESS else 'warning'}"
-                )
+        # Déterminer si rejeté ou accepté
+        is_rejected = processed.status == SubmissionStatus.REJECTED
+        is_success = processed.status == SubmissionStatus.DQ_SUCCESS
+        
+        # Badge de statut
+        if is_rejected:
+            status_badge = html.Span(
+                "REJETÉ",
+                className="badge bg-danger"
+            )
+            status_color = "danger"
+            status_icon = "bi-x-circle-fill"
+        elif is_success:
+            status_badge = html.Span(
+                "ACCEPTÉ",
+                className="badge bg-success"
+            )
+            status_color = "success"
+            status_icon = "bi-check-circle-fill"
+        else:
+            status_badge = html.Span(
+                processed.status.value.upper(),
+                className="badge bg-warning"
+            )
+            status_color = "warning"
+            status_icon = "bi-exclamation-triangle-fill"
+        
+        # Message principal selon le statut
+        if is_rejected:
+            main_message = html.Div([
+                html.H4([
+                    html.I(className=f"bi {status_icon} text-{status_color} me-2"),
+                    "Dépôt Rejeté"
+                ], className=f"text-{status_color} mb-3"),
+                html.P([
+                    "Votre soumission a été ",
+                    html.Strong("rejetée", className="text-danger"),
+                    " suite aux contrôles qualité."
+                ]),
+                html.P([
+                    html.Strong(f"{processed.dq_failed} test(s) ont échoué", className="text-danger"),
+                    f" sur {processed.dq_total}."
+                ]),
+                html.P([
+                    "Un email de notification a été envoyé à ",
+                    html.Strong(submitter_email),
+                    " avec les détails des anomalies détectées."
+                ])
             ])
+        else:
+            main_message = html.Div([
+                html.H4([
+                    html.I(className=f"bi {status_icon} text-{status_color} me-2"),
+                    "Dépôt Accepté"
+                ], className=f"text-{status_color} mb-3"),
+                html.P("Votre soumission a été acceptée et validée avec succès."),
+                html.P([
+                    html.Strong(f"{processed.dq_passed} test(s) ont réussi", className="text-success"),
+                    f" sur {processed.dq_total}."
+                ]),
+                html.P([
+                    "Un email de confirmation a été envoyé à ",
+                    html.Strong(submitter_email),
+                    "."
+                ])
+            ])
+        
+        # Modal de résultat
+        tracking_display = html.Div([
+            main_message,
+            html.Hr(),
+            html.Div([
+                html.Small("Numéro de suivi: "),
+                html.Code(submission_id, className="text-muted")
+            ]),
+            html.Div([
+                html.Small("Statut: "),
+                status_badge
+            ], className="mt-2")
         ])
         
         # Réinitialiser les champs
         empty_paths = [""] * len(file_paths)
         
-        toast = html.Div([
-            html.Strong("Succès: "),
-            "Soumission enregistrée et traitée"
-        ], className="toast show bg-success text-white")
+        # Toast selon le statut
+        if is_rejected:
+            toast = html.Div([
+                html.Strong("Rejeté: "),
+                "Le dépôt a été rejeté suite aux contrôles qualité"
+            ], className="toast show bg-danger text-white")
+        elif is_success:
+            toast = html.Div([
+                html.Strong("Accepté: "),
+                "Le dépôt a été validé avec succès"
+            ], className="toast show bg-success text-white")
+        else:
+            toast = html.Div([
+                html.Strong("Traité: "),
+                "La soumission a été traitée"
+            ], className="toast show bg-warning text-white")
         
-        # Bouton de téléchargement du rapport
-        download_button = ""
+        # Boutons d'action (pour download-report-container)
+        action_buttons = html.Div()
         if processed.dq_report_path:
-            download_button = dbc.Button(
-                [html.I(className="bi bi-download me-2"), "Télécharger le rapport DQ"],
-                id={'type': 'download-report-btn', 'submission_id': submission_id},
-                color="info",
-                className="mt-2"
-            )
+            print(f"\n[DEBUG Boutons] Création des boutons pour submission: {submission_id}")
+            print(f"[DEBUG Boutons] is_rejected = {is_rejected}")
+            print(f"[DEBUG Boutons] dq_report_path = {processed.dq_report_path}")
+            
+            buttons_list = [
+                html.A(
+                    dbc.Button(
+                        [html.I(className="bi bi-download me-2"), "Télécharger le rapport"],
+                        color="danger" if is_rejected else "info",
+                        className="me-2"
+                    ),
+                    href=f"/download-report/{submission_id}"
+                )
+            ]
+            print(f"[DEBUG Boutons] Lien téléchargement créé: /download-report/{submission_id}")
+            
+            # Ajouter bouton "Forcer le dépôt" si rejeté
+            if is_rejected:
+                buttons_list.append(
+                    dbc.Button(
+                        [html.I(className="bi bi-shield-exclamation me-2"), "Forcer le dépôt"],
+                        id={'type': 'force-deposit-btn', 'submission_id': submission_id},
+                        color="warning",
+                        outline=True
+                    )
+                )
+                print(f"[DEBUG Boutons] Bouton forcer créé avec ID: {{'type': 'force-deposit-btn', 'submission_id': '{submission_id}'}}")
+            
+            print(f"[DEBUG Boutons] Nombre total de boutons: {len(buttons_list)}")
+            
+            # Pas de dcc.Download ici - on utilise le composant global
+            action_buttons = html.Div(buttons_list, className="d-flex justify-content-center gap-2")
         
-        return True, tracking_display, None, "", "", empty_paths, toast, download_button
+        return True, tracking_display, None, "", "", empty_paths, toast, action_buttons
         
     except Exception as e:
         toast = html.Div([
@@ -389,8 +473,18 @@ def validate_file_path(file_path):
 )
 def close_success_modal(n_clicks):
     """Ferme le modal de succès."""
+    print(f"\n[DEBUG Fermer] Callback déclenché! n_clicks={n_clicks}")
     if n_clicks:
-        return False
+        print(f"[DEBUG Fermer] Fermeture du modal, retour False")
+        try:
+            print(f"[DEBUG Fermer] ✅ Retournant: False")
+            return False
+        except Exception as e:
+            print(f"[DEBUG Fermer] ❌ ERREUR: {e}")
+            import traceback
+            traceback.print_exc()
+            raise PreventUpdate
+    print(f"[DEBUG Fermer] n_clicks={n_clicks}, PreventUpdate")
     raise PreventUpdate
 
 
@@ -435,30 +529,77 @@ def update_input_from_store(file_path):
     if file_path:
         return file_path
     raise PreventUpdate
+
+
+# NOTE: Le téléchargement se fait maintenant via un endpoint Flask direct
+# Voir app.py @app.server.route('/download-report/<submission_id>')
+# Les boutons sont maintenant des liens <a href="/download-report/...">
+
+
 @callback(
-    Output('download-dq-report', 'data'),
-    Input({'type': 'download-report-btn', 'submission_id': ALL}, 'n_clicks'),
-    State({'type': 'download-report-btn', 'submission_id': ALL}, 'id'),
+    [Output('success-modal', 'is_open', allow_duplicate=True),
+     Output('toast-container-drop', 'children', allow_duplicate=True)],
+    Input({'type': 'force-deposit-btn', 'submission_id': ALL}, 'n_clicks'),
     prevent_initial_call=True
 )
-def download_report(n_clicks_list, ids_list):
-    '''Télécharge le rapport DQ Excel.'''
-    if not n_clicks_list or not any(n_clicks_list):
+def force_deposit(n_clicks_list):
+    """Force l'acceptation d'un dépôt rejeté."""
+    print(f"\n{'='*60}")
+    print(f"[DEBUG Force] Callback déclenché!")
+    print(f"[DEBUG Force] n_clicks_list = {n_clicks_list}")
+    
+    # Utiliser ctx pour identifier le bouton cliqué
+    from dash import ctx
+    print(f"[DEBUG Force] ctx.triggered = {ctx.triggered}")
+    print(f"[DEBUG Force] ctx.triggered_id = {ctx.triggered_id}")
+    
+    if not ctx.triggered_id:
+        print(f"[DEBUG Force] Pas de triggered_id, PreventUpdate")
         raise PreventUpdate
     
-    # Trouver quel bouton a été cliqué
-    clicked_index = next((i for i, n in enumerate(n_clicks_list) if n), None)
-    if clicked_index is None:
+    # Vérifier que c'est un vrai clic (pas None)
+    if ctx.triggered[0].get('value') is None:
+        print(f"[DEBUG Force] Valeur None (bouton créé dynamiquement), PreventUpdate")
         raise PreventUpdate
     
-    submission_id = ids_list[clicked_index]['submission_id']
+    submission_id = ctx.triggered_id['submission_id']
+    print(f"[Force] Demande de forçage pour: {submission_id}")
     
-    # Récupérer la soumission
+    # Récupérer la soumission et changer son statut
     manager = get_channel_manager()
     submission = manager.get_submission(submission_id)
     
-    if not submission or not submission.dq_report_path:
+    if not submission:
+        print(f"[Force] Soumission {submission_id} introuvable")
         raise PreventUpdate
     
-    # Télécharger le fichier
-    return dcc.send_file(submission.dq_report_path)
+    # Forcer le statut à DQ_SUCCESS
+    from src.core.models_channels import SubmissionStatus
+    submission.status = SubmissionStatus.DQ_SUCCESS
+    manager.update_submission(submission)
+    
+    print(f"[Force] Dépôt {submission_id} forcé à l'acceptation")
+    print(f"[Force] Nouveau statut: {submission.status}")
+    
+    # Fermer le modal et afficher toast de confirmation
+    toast_content = html.Div([
+        html.Div([
+            html.I(className="bi bi-shield-check me-2"),
+            html.Strong("Forcé: "),
+            "Le dépôt a été accepté malgré les échecs DQ"
+        ], className="toast show bg-warning text-dark")
+    ])
+    
+    print(f"[DEBUG Force] Retour: modal=False (fermé), toast créé")
+    print(f"[DEBUG Force] Type toast: {type(toast_content)}")
+    
+    try:
+        result = (False, toast_content)
+        print(f"[DEBUG Force] ✅ Retournant: {result}")
+        return result
+    except Exception as e:
+        print(f"[DEBUG Force] ❌ ERREUR lors du retour: {e}")
+        import traceback
+        traceback.print_exc()
+        raise PreventUpdate
+

@@ -20,6 +20,7 @@ class SubmissionStatus(Enum):
     PROCESSING = "processing"  # Traitement en cours
     DQ_SUCCESS = "dq_success"  # DQ réussie
     DQ_FAILED = "dq_failed"  # DQ échouée
+    REJECTED = "rejected"  # Dépôt rejeté (échec critique)
     ERROR = "error"  # Erreur technique
 
 

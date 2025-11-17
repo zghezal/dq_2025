@@ -97,6 +97,11 @@ app.layout = html.Div([
     dcc.Store(id="inventory-dqs-store", storage_type="session"),
     # Store global pour le contexte d'exécution
     dcc.Store(id="run-context-store", storage_type="session"),
+    # Placeholders for run-context callbacks (MUST be in main layout!)
+    dcc.Input(id={"role": "run-context", "field": "quarter"}, type="text", style={"display": "none"}),
+    dcc.Input(id={"role": "run-context", "field": "stream"}, type="text", style={"display": "none"}),
+    dcc.Input(id={"role": "run-context", "field": "project"}, type="text", style={"display": "none"}),
+    dcc.Input(id={"role": "run-context", "field": "zone"}, type="text", style={"display": "none"}),
     # Note: Ne pas dupliquer ici les components (dropdowns/divs) qui sont
     # définis dans les pages (ex: select_dq_point_page). Les duplications
     # d'identifiants empêchaient les callbacks d'atteindre les éléments
@@ -134,18 +139,27 @@ app.validation_layout = html.Div([
         dcc.Dropdown(id={"role": "metric-column", "form": "metric"}, options=[], style={"display": "none"}),
         dbc.Checklist(id={"role": "metric-general", "field": "export"}, options=[], value=[], style={"display": "none"}),
         dcc.Store(id="interval-rules-store", storage_type="session"),
-    dbc.Checkbox(id={"role": "interval-lower-enabled"}, value=False, style={"display": "none"}),
+        dbc.Checkbox(id={"role": "interval-lower-enabled"}, value=False, style={"display": "none"}),
         dcc.Input(id={"role": "interval-lower-value"}, type="number", style={"display": "none"}),
-    dbc.Checkbox(id={"role": "interval-upper-enabled"}, value=False, style={"display": "none"}),
+        dbc.Checkbox(id={"role": "interval-upper-enabled"}, value=False, style={"display": "none"}),
         dcc.Input(id={"role": "interval-upper-value"}, type="number", style={"display": "none"}),
         dcc.Dropdown(id={"role": "interval-rule-columns", "index": "placeholder"}, options=[], style={"display": "none"}),
         dbc.Checkbox(id={"role": "interval-rule-lower-enabled", "index": "placeholder"}, value=False, style={"display": "none"}),
         dcc.Input(id={"role": "interval-rule-lower-value", "index": "placeholder"}, type="number", style={"display": "none"}),
         dbc.Checkbox(id={"role": "interval-rule-upper-enabled", "index": "placeholder"}, value=False, style={"display": "none"}),
         dcc.Input(id={"role": "interval-rule-upper-value", "index": "placeholder"}, type="number", style={"display": "none"}),
-    configs_page(),
-    channel_admin_page(),
-    channel_drop_page()
+        # Placeholders for run-context callbacks
+        dcc.Input(id={"role": "run-context", "field": "quarter"}, type="text", style={"display": "none"}),
+        dcc.Input(id={"role": "run-context", "field": "stream"}, type="text", style={"display": "none"}),
+        dcc.Input(id={"role": "run-context", "field": "project"}, type="text", style={"display": "none"}),
+        dcc.Input(id={"role": "run-context", "field": "zone"}, type="text", style={"display": "none"}),
+        # Note: dcc.Download components are now created dynamically with pattern-matching
+        # Placeholders for home page buttons
+        dbc.Button("Check & Drop", id="home-checkdrop-btn", style={"display": "none"}),
+        dbc.Button("DQ Editor", id="home-dqeditor-btn", style={"display": "none"}),
+        configs_page(),
+        channel_admin_page(),
+        channel_drop_page()
 ])
 
 # Enregistrement des callbacks
@@ -155,6 +169,44 @@ register_build_callbacks(app)
 register_configs_callbacks(app)
 register_dq_inventory_callbacks(app)
 register_dq_runner_callbacks(app)
+
+# ==================== ENDPOINT FLASK POUR TÉLÉCHARGEMENT ====================
+# Solution de contournement pour le téléchargement de rapports
+from flask import send_file as flask_send_file, request, abort
+from pathlib import Path
+from src.core.channel_manager import get_channel_manager
+
+@app.server.route('/download-report/<submission_id>')
+def download_report_endpoint(submission_id):
+    """Endpoint Flask pour télécharger un rapport."""
+    print(f"[Flask Download] Requête pour submission_id: {submission_id}")
+    
+    try:
+        manager = get_channel_manager()
+        submission = manager.get_submission(submission_id)
+        
+        if not submission or not submission.dq_report_path:
+            print(f"[Flask Download] ❌ Submission ou rapport introuvable")
+            abort(404, "Rapport non trouvé")
+        
+        report_path = Path(submission.dq_report_path)
+        
+        if not report_path.exists():
+            print(f"[Flask Download] ❌ Fichier introuvable: {report_path}")
+            abort(404, "Fichier introuvable")
+        
+        print(f"[Flask Download] ✅ Envoi du fichier: {report_path}")
+        
+        return flask_send_file(
+            str(report_path),
+            as_attachment=True,
+            download_name=report_path.name
+        )
+    except Exception as e:
+        print(f"[Flask Download] ❌ Erreur: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, str(e))
 
 if __name__ == "__main__":
     app.run(debug=True)
