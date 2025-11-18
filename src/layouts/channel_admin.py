@@ -110,6 +110,23 @@ def channel_admin_page():
                             )
                         ], md=6),
                         dbc.Col([
+                            dbc.Label("Direction *"),
+                            dcc.Dropdown(
+                                id="channel-direction-dropdown",
+                                options=[
+                                    {"label": "⬇ Entrant (vers STDA)", "value": "incoming"},
+                                    {"label": "⬆ Sortant (depuis STDA)", "value": "outgoing"}
+                                ],
+                                value="incoming",
+                                placeholder="Sélectionnez la direction...",
+                                clearable=False,
+                                className="mb-3"
+                            )
+                        ], md=6)
+                    ]),
+                    
+                    dbc.Row([
+                        dbc.Col([
                             dbc.Label("Statut"),
                             dbc.Checklist(
                                 id="channel-active-check",

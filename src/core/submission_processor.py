@@ -76,12 +76,7 @@ class SubmissionProcessor:
             print(f"[{submission.submission_id}] Exécution des contrôles qualité...")
             dq_results = self._execute_dq_checks(submission, channel, datasets)
             
-            # 4. Génération du rapport
-            print(f"[{submission.submission_id}] Génération du rapport Excel...")
-            report_path = self._generate_report(submission, channel, dq_results)
-            submission.dq_report_path = str(report_path)
-            
-            # 5. Déterminer le statut final
+            # 4. Déterminer le statut final AVANT de générer le rapport
             if submission.dq_failed > 0:
                 # Si des tests DQ échouent, le dépôt est REJETÉ
                 submission.status = SubmissionStatus.REJECTED
@@ -91,6 +86,11 @@ class SubmissionProcessor:
             else:
                 # Tous les tests passent
                 submission.status = SubmissionStatus.DQ_SUCCESS
+            
+            # 5. Génération du rapport (avec le statut final)
+            print(f"[{submission.submission_id}] Génération du rapport Excel...")
+            report_path = self._generate_report(submission, channel, dq_results)
+            submission.dq_report_path = str(report_path)
             
             submission.processing_completed_at = datetime.now()
             self.channel_manager.update_submission(submission)
@@ -258,9 +258,9 @@ class SubmissionProcessor:
                 overrides = {alias: f'memory://{alias}' for alias in datasets.keys()}
                 plan = build_execution_plan(inv, dq_definition, overrides=overrides)
                 
-                # Exécuter le plan
+                # Exécuter le plan avec investigation activée
                 from src.core.executor import execute
-                run_result = execute(plan, loader, investigate=False)
+                run_result = execute(plan, loader, investigate=True)
                 
                 # Exécuter les scripts si présents
                 script_results = []
@@ -292,6 +292,7 @@ class SubmissionProcessor:
                                 total_failed += 1
                 
                 all_results[dq_config_path] = {
+                    'run_result': run_result,  # Stocker l'objet RunResult complet
                     'metrics': {k: v.model_dump() for k, v in run_result.metrics.items()},
                     'tests': {k: v.model_dump() for k, v in run_result.tests.items()},
                     'scripts': [s.to_dict() for s in script_results],
@@ -320,7 +321,7 @@ class SubmissionProcessor:
     def _generate_report(self, submission: ChannelSubmission,
                         channel: DropChannel,
                         dq_results: Dict[str, Any]) -> Path:
-        """Génère le rapport Excel"""
+        """Génère le rapport Excel au format unifié (utilise export_run_result_to_excel)"""
         
         # Nom du fichier
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -329,119 +330,106 @@ class SubmissionProcessor:
         
         # Si pas de DQ exécutée, créer un rapport simple
         if not dq_results:
-            # Créer un rapport de base avec pandas
             summary_data = {
                 'Canal': [channel.name],
                 'Équipe': [channel.team_name],
-                'Date soumission': [submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S")],
-                'Fichiers soumis': [len(submission.file_mappings)],
-                'Statut': [submission.status.value]
+                'Date_Soumission': [submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S")],
+                'Fichiers_Soumis': [len(submission.file_mappings)],
+                'Submission_ID': [submission.submission_id],
+                'Statut': ['NO_DQ' if submission.status == SubmissionStatus.PROCESSING else submission.status.value],
+                'Total_Tests': [0],
+                'Tests_Passed': [0],
+                'Tests_Failed': [0]
             }
             df = pd.DataFrame(summary_data)
             df.to_excel(report_path, sheet_name='Résumé', index=False)
             return report_path
         
-        # Générer un rapport Excel avec les résultats DQ et scripts
-        with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
-            # Onglet Résumé
-            summary_data = {
-                'Canal': [channel.name],
-                'Équipe': [channel.team_name],
-                'Date soumission': [submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S")],
-                'Fichiers soumis': [len(submission.file_mappings)],
-                'Statut': [submission.status.value],
-                'Tests totaux': [submission.dq_total],
-                'Tests réussis': [submission.dq_passed],
-                'Tests échoués': [submission.dq_failed]
-            }
-            df_summary = pd.DataFrame(summary_data)
-            df_summary.to_excel(writer, sheet_name='Résumé', index=False)
+        # Si une seule DQ config, utiliser export_run_result_to_excel directement
+        if len(dq_results) == 1:
+            dq_path, dq_data = list(dq_results.items())[0]
+            run_result = dq_data.get('run_result')
             
-            # Onglet Tests (DQ et scripts)
-            test_rows = []
-            for dq_path, dq_data in dq_results.items():
-                dq_name = Path(dq_path).stem
+            if run_result:
+                from src.core.simple_excel_export import export_run_result_to_excel
                 
-                # Tests DQ
-                for test_id, test_data in dq_data.get('tests', {}).items():
-                    test_rows.append({
-                        'DQ': dq_name,
-                        'Type': 'DQ Test',
-                        'Test ID': test_id,
-                        'Status': 'PASS' if test_data.get('passed') else 'FAIL',
-                        'Message': test_data.get('message', ''),
-                        'Details': str(test_data.get('context', ''))
-                    })
+                context = {
+                    'canal': channel.name,
+                    'equipe': channel.team_name,
+                    'submission_id': submission.submission_id,
+                    'submission_date': submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S")
+                }
                 
-                # Tests scripts
-                for script_data in dq_data.get('scripts', []):
-                    script_id = script_data.get('script_id', 'unknown')
-                    for test_id, test_info in script_data.get('tests', {}).items():
-                        test_rows.append({
-                            'DQ': dq_name,
-                            'Type': f'Script ({script_id})',
-                            'Test ID': test_id,
-                            'Status': test_info.get('status', 'unknown').upper(),
-                            'Message': test_info.get('message', ''),
-                            'Details': f"Value: {test_info.get('value', 'N/A')}, Threshold: {test_info.get('threshold', 'N/A')}"
-                        })
-            
-            if test_rows:
-                df_tests = pd.DataFrame(test_rows)
-                df_tests.to_excel(writer, sheet_name='Tests', index=False)
-            
-            # Onglet Métriques
-            metric_rows = []
-            for dq_path, dq_data in dq_results.items():
-                dq_name = Path(dq_path).stem
+                export_run_result_to_excel(
+                    run_result=run_result,
+                    output_path=str(report_path),
+                    dq_id=channel.channel_id,
+                    quarter=submission.submitted_at.strftime("%Y-Q%m"),
+                    project=channel.team_name,
+                    context=context
+                )
                 
-                # Métriques DQ
-                for metric_id, metric_data in dq_data.get('metrics', {}).items():
-                    metric_rows.append({
-                        'DQ': dq_name,
-                        'Type': 'DQ Metric',
-                        'Metric ID': metric_id,
-                        'Value': metric_data.get('value', 'N/A'),
-                        'Status': metric_data.get('status', 'N/A'),
-                        'Details': str(metric_data.get('context', ''))
-                    })
-                
-                # Métriques scripts
-                for script_data in dq_data.get('scripts', []):
-                    script_id = script_data.get('script_id', 'unknown')
-                    for metric_name, metric_value in script_data.get('metrics', {}).items():
-                        metric_rows.append({
-                            'DQ': dq_name,
-                            'Type': f'Script ({script_id})',
-                            'Metric ID': metric_name,
-                            'Value': metric_value,
-                            'Status': 'Calculated',
-                            'Details': ''
-                        })
+                return report_path
+        
+        # Si plusieurs DQ configs, créer un rapport consolidé
+        from src.core.simple_excel_export import export_run_result_to_excel
+        from src.core.executor import RunResult
+        
+        # Fusionner tous les run_results en un seul
+        merged_metrics = {}
+        merged_tests = {}
+        merged_investigations = {}
+        merged_scripts = []
+        
+        for dq_path, dq_data in dq_results.items():
+            run_result = dq_data.get('run_result')
+            if not run_result:
+                continue
             
-            if metric_rows:
-                df_metrics = pd.DataFrame(metric_rows)
-                df_metrics.to_excel(writer, sheet_name='Métriques', index=False)
+            dq_name = Path(dq_path).stem
             
-            # Onglet Scripts
-            script_rows = []
-            for dq_path, dq_data in dq_results.items():
-                dq_name = Path(dq_path).stem
-                for script_data in dq_data.get('scripts', []):
-                    script_rows.append({
-                        'DQ': dq_name,
-                        'Script ID': script_data.get('script_id', 'unknown'),
-                        'Status': script_data.get('status', 'unknown').upper(),
-                        'Duration (s)': script_data.get('duration', 0),
-                        'Error': script_data.get('error', ''),
-                        'Metrics Count': len(script_data.get('metrics', {})),
-                        'Tests Count': len(script_data.get('tests', {})),
-                        'Timestamp': script_data.get('timestamp', '')
-                    })
+            # Préfixer les IDs avec le nom de la DQ config
+            for metric_id, metric_result in run_result.metrics.items():
+                new_id = f"{dq_name}_{metric_id}"
+                merged_metrics[new_id] = metric_result
             
-            if script_rows:
-                df_scripts = pd.DataFrame(script_rows)
-                df_scripts.to_excel(writer, sheet_name='Scripts', index=False)
+            for test_id, test_result in run_result.tests.items():
+                new_id = f"{dq_name}_{test_id}"
+                merged_tests[new_id] = test_result
+            
+            # Investigations
+            for inv_key, inv_data in run_result.investigations.items():
+                new_key = f"{dq_name}_{inv_key}"
+                merged_investigations[new_key] = inv_data
+            
+            # Scripts
+            merged_scripts.extend(run_result.scripts)
+        
+        # Créer un RunResult consolidé
+        consolidated_result = RunResult(
+            run_id=f"consolidated_{submission.submission_id}",
+            metrics=merged_metrics,
+            tests=merged_tests,
+            scripts=merged_scripts,
+            investigations=merged_investigations,
+            investigation_report=True if merged_investigations else False
+        )
+        
+        context = {
+            'canal': channel.name,
+            'equipe': channel.team_name,
+            'submission_id': submission.submission_id,
+            'submission_date': submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        export_run_result_to_excel(
+            run_result=consolidated_result,
+            output_path=str(report_path),
+            dq_id=channel.channel_id,
+            quarter=submission.submitted_at.strftime("%Y-Q%m"),
+            project=channel.team_name,
+            context=context
+        )
         
         return report_path
     

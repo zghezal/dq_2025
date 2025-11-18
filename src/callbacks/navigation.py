@@ -45,6 +45,28 @@ def register_navigation_callbacks(app):
             return []
         parts = [p for p in pathname.split('/') if p]
         return [html.Span(p) for p in parts]
+    
+    @app.callback(
+        Output("profile-modal", "is_open"),
+        Input("profile-button", "n_clicks"),
+        Input("profile-modal-close", "n_clicks"),
+        State("profile-modal", "is_open"),
+        prevent_initial_call=True
+    )
+    def toggle_profile_modal(open_clicks, close_clicks, is_open):
+        """Ouvre/ferme la modale Profile"""
+        return not is_open
+    
+    @app.callback(
+        Output("help-modal", "is_open"),
+        Input("help-button", "n_clicks"),
+        Input("help-modal-close", "n_clicks"),
+        State("help-modal", "is_open"),
+        prevent_initial_call=True
+    )
+    def toggle_help_modal(open_clicks, close_clicks, is_open):
+        """Ouvre/ferme la modale Help"""
+        return not is_open
 
     @app.callback(
         Output("page-content", "children"),

@@ -159,6 +159,7 @@ class DropChannel:
     name: str  # Nom du canal
     description: str = ""
     team_name: str = ""  # Nom de l'équipe externe
+    direction: str = "incoming"  # "incoming" (vers STDA) ou "outgoing" (depuis STDA)
     
     # Fichiers attendus
     file_specifications: List[FileSpecification] = field(default_factory=list)
@@ -186,6 +187,7 @@ class DropChannel:
             "name": self.name,
             "description": self.description,
             "team_name": self.team_name,
+            "direction": self.direction,
             "file_specifications": [fs.to_dict() for fs in self.file_specifications],
             "dq_configs": self.dq_configs,
             "email_config": self.email_config.to_dict(),

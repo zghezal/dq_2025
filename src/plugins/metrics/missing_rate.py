@@ -345,6 +345,8 @@ class MissingRate(BasePlugin):
             "zone": p.specific.zone,
             "filter_name": flt,
             "metric_id": metric_id,
+            "dataset": ds,  # Ajouter le dataset pour les investigations
+            "columns": target_columns,  # Ajouter les colonnes aussi
             "per_column": result_map,
             "total_rows": total_rows,
         }

@@ -64,6 +64,15 @@ def _render_channel_card(channel: DropChannel, stats: dict):
             className="badge bg-warning text-dark me-2"
         )
     
+    # Badge de direction
+    direction_text = "vers STDA" if channel.direction == "incoming" else "depuis STDA"
+    direction_icon = "bi-arrow-down-circle" if channel.direction == "incoming" else "bi-arrow-up-circle"
+    direction_color = "success" if channel.direction == "incoming" else "primary"
+    direction_badge = html.Span(
+        [html.I(className=f"bi {direction_icon} me-1"), direction_text],
+        className=f"badge bg-{direction_color} me-2"
+    )
+    
     success_rate = stats.get('success_rate', 0)
     rate_color = 'success' if success_rate >= 80 else 'warning' if success_rate >= 50 else 'danger'
     
@@ -77,7 +86,8 @@ def _render_channel_card(channel: DropChannel, stats: dict):
                     ], className="card-title"),
                     html.Div([
                         status_badge,
-                        permission_badge
+                        permission_badge,
+                        direction_badge
                     ])
                 ], className="d-flex justify-content-between align-items-center mb-3"),
                 
@@ -154,6 +164,7 @@ def _render_channel_card(channel: DropChannel, stats: dict):
     Output('channel-id-input', 'disabled'),
     Output('channel-name-input', 'value'),
     Output('channel-team-input', 'value'),
+    Output('channel-direction-dropdown', 'value'),
     Output('channel-description-input', 'value'),
     Output('channel-active-check', 'value'),
     Output('file-specs-container', 'children'),
@@ -185,7 +196,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
     
     # Fermer le modal (annuler ou sauvegarder)
     if 'btn-cancel-channel' in trigger_id or 'btn-save-channel' in trigger_id:
-        return (False,) + tuple([no_update] * 18)
+        return (False,) + tuple([no_update] * 19)
     
     # Nouveau canal
     if 'btn-new-channel' in trigger_id:
@@ -196,6 +207,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
             False,  # channel_id disabled
             "",  # name
             "",  # team
+            "incoming",  # direction (default)
             "",  # description
             [True],  # active (checked)
             [],  # file specs (vide)
@@ -220,7 +232,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
         channel = manager.get_channel(channel_id)
         
         if not channel:
-            return [no_update] * 19
+            return [no_update] * 20
         
         # Rendre les file specs
         file_specs_elements = []
@@ -234,6 +246,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
             True,  # channel_id disabled (non éditable)
             channel.name,
             channel.team_name,
+            channel.direction,
             channel.description or "",
             [True] if channel.active else [],
             file_specs_elements,
@@ -368,6 +381,7 @@ def remove_file_spec_row(n_clicks_list, current_children):
     State('channel-id-input', 'value'),
     State('channel-name-input', 'value'),
     State('channel-team-input', 'value'),
+    State('channel-direction-dropdown', 'value'),
     State('channel-description-input', 'value'),
     State('channel-active-check', 'value'),
     State({'type': 'file-spec-id', 'index': dash.dependencies.ALL}, 'value'),
@@ -386,7 +400,7 @@ def remove_file_spec_row(n_clicks_list, current_children):
     State('channel-failure-body-input', 'value'),
     prevent_initial_call=True
 )
-def save_channel(n_clicks, channel_id, name, team, description, active_check,
+def save_channel(n_clicks, channel_id, name, team, direction, description, active_check,
                  file_ids, file_names, file_formats, file_required_list,
                  dq_configs, public_check, allowed_users_str, allowed_groups_str,
                  team_emails, admin_emails,
@@ -441,6 +455,7 @@ def save_channel(n_clicks, channel_id, name, team, description, active_check,
         channel_id=channel_id,
         name=name,
         team_name=team,
+        direction=direction or "incoming",
         description=description,
         active=bool(active_check),
         file_specifications=file_specs,

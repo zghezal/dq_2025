@@ -459,44 +459,34 @@ class IntervalCheck(BasePlugin):
         if not metric_id:
             return None
         
-        # Récupérer les détails de la métrique depuis le context
-        metrics_details = getattr(context, "metrics_details", {})
-        if not isinstance(metrics_details, dict):
+        # Récupérer le résultat complet de la métrique depuis context.metrics_results
+        metrics_results = getattr(context, "metrics_results", {})
+        if not isinstance(metrics_results, dict):
             return None
         
-        metric_detail = metrics_details.get(metric_id)
-        if not isinstance(metric_detail, dict):
+        metric_result = metrics_results.get(metric_id)
+        if not metric_result:
             return None
         
-        # Extraire les informations de la métrique
-        # Pour missing_rate, on a : per_column, total_rows, overall_rate
-        per_column = metric_detail.get("per_column", {})
-        
-        # Déterminer le type de métrique (on suppose missing_rate pour l'instant)
-        # TODO: Généraliser pour d'autres types de métriques
-        metric_type = "missing_rate"  # Inféré depuis le context ou params
-        
-        # Récupérer le dataset source
-        # Pour missing_rate, le dataset est stocké dans params de la métrique
-        # On doit le retrouver via context.datasets
-        
-        # Chercher le dataset dans les datasets chargés
-        # La métrique stocke le nom du dataset dans ses params
-        dataset_alias = None
-        
-        # Parser le metric_id pour extraire le dataset
-        # Format: stream.project.zone.metric.missing_rate.dataset_alias...
-        metric_id_parts = metric_id.split(".")
-        if len(metric_id_parts) >= 6:
-            dataset_alias = metric_id_parts[5]
+        # Récupérer le dataset depuis les métadonnées de la métrique
+        meta = getattr(metric_result, 'meta', {}) or {}
+        dataset_alias = meta.get('dataset')
         
         if not dataset_alias or dataset_alias not in context.datasets:
             return None
         
         df_source = context.datasets[dataset_alias]
         
+        # Récupérer les détails de la métrique
+        metrics_details = getattr(context, "metrics_details", {})
+        metric_detail = metrics_details.get(metric_id, {})
+        per_column = metric_detail.get("per_column", {})
+        
+        # Déterminer le type de métrique depuis les métadonnées ou par défaut
+        metric_type = meta.get('metric_type', 'missing_rate')  # TODO: stocker le type dans meta
+        
         # Pour missing_rate : échantillonner les lignes avec valeurs manquantes
-        if metric_type == "missing_rate":
+        if metric_type == "missing_rate" or per_column:  # Si per_column existe, c'est missing_rate
             # Trouver les colonnes avec missing
             columns_with_missing = []
             for col_key, value in per_column.items():
@@ -506,13 +496,18 @@ class IntervalCheck(BasePlugin):
                     if missing_count > 0 and col_name in df_source.columns:
                         columns_with_missing.append(col_name)
             
+            # Fallback: utiliser les colonnes depuis meta
+            if not columns_with_missing:
+                columns_with_missing = meta.get('columns', [])
+            
             if not columns_with_missing:
                 return None
             
             # Filtrer les lignes avec au moins une valeur manquante dans ces colonnes
             mask = pd.Series(False, index=df_source.index)
             for col in columns_with_missing:
-                mask |= df_source[col].isna()
+                if col in df_source.columns:
+                    mask |= df_source[col].isna() | (df_source[col] == "") | (df_source[col] == " ")
             
             problematic_df = df_source[mask]
             

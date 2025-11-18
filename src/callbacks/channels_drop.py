@@ -27,10 +27,13 @@ def load_channel_options(n_intervals):
     # Afficher tous les canaux actifs
     channels = manager.list_channels(active_only=True)
     
-    return [
-        {'label': f"{ch.name} ({ch.team_name})", 'value': ch.channel_id}
-        for ch in channels
-    ]
+    options = []
+    for ch in channels:
+        direction_label = "→ STDA" if ch.direction == "incoming" else "← STDA"
+        label = f"{ch.name} ({ch.team_name}) {direction_label}"
+        options.append({'label': label, 'value': ch.channel_id})
+    
+    return options
 
 
 @callback(
@@ -52,6 +55,16 @@ def display_channel_info(channel_id):
     if not channel:
         return html.Div("Canal non trouvé", className="alert alert-danger"), "", {"display": "none"}, {"display": "none"}, {"display": "none"}
     
+    # Direction badge
+    direction_text = "vers STDA" if channel.direction == "incoming" else "depuis STDA"
+    direction_icon = "bi-arrow-down-circle" if channel.direction == "incoming" else "bi-arrow-up-circle"
+    direction_color = "success" if channel.direction == "incoming" else "primary"
+    
+    direction_badge = html.Span([
+        html.I(className=f"bi {direction_icon} me-1"),
+        direction_text
+    ], className=f"badge bg-{direction_color} me-2")
+    
     # Info du canal
     info = html.Div([
         html.H5([
@@ -60,7 +73,7 @@ def display_channel_info(channel_id):
         ], className="mb-3"),
         html.Dl([
             html.Dt("Nom du canal:"),
-            html.Dd(channel.name),
+            html.Dd([channel.name, " ", direction_badge]),
             html.Dt("Équipe:"),
             html.Dd(channel.team_name),
             html.Dt("Description:"),
