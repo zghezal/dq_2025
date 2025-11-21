@@ -1,0 +1,52 @@
+id: dq_1763736346
+version: '1.0'
+globals:
+  default_severity: medium
+  sample_size: 10
+  fail_fast: false
+  timezone: Europe/Paris
+context:
+  stream: BANKING
+  project: CORE_BANKING
+  zone: raw
+  quarter: 2025Q4
+databases:
+- alias: daily_transactions.csv
+  dataset: daily_transactions.csv
+metrics:
+  M-001:
+    type: missing_rate
+    general:
+      export: true
+    nature:
+      name: Missing Rate
+      description: ''
+      preliminary_comments: ''
+    identification:
+      metric_id: M-001
+    specific:
+      dataset: daily_transactions.csv
+      column: amount
+tests:
+  CORE_BANKING_RAW_TEST_1:
+    type: interval_check
+    nature:
+      name: Interval Check
+    identification:
+      test_id: CORE_BANKING_RAW_TEST_1
+      control_name: Interval Check
+      control_id: CORE_BANKING_RAW_TEST_1
+    general:
+      criticality: medium
+      on_fail: raise_alert
+      sample_on_fail: false
+    specific:
+      target_mode: metric_value
+      metric_id: M-001
+      columns: []
+      column_rules:
+      - columns:
+        - amount_missing_rate
+        lower: null
+        upper: 0.5
+scripts: []

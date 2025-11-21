@@ -1,0 +1,98 @@
+id: banking_transactions_quality
+description: "Contrôles qualité pour les transactions bancaires journalières"
+version: "1.0"
+
+context:
+  stream: "BANKING"
+  project: "CORE_BANKING"
+  zone: "raw"
+
+databases:
+  - alias: daily_transactions
+
+metrics:
+  missing_rate_transaction_id:
+    type: missing_rate
+    specific:
+      dataset: daily_transactions
+      column: transaction_id
+  
+  missing_rate_account_number:
+    type: missing_rate
+    specific:
+      dataset: daily_transactions
+      column: account_number
+  
+  missing_rate_amount:
+    type: missing_rate
+    specific:
+      dataset: daily_transactions
+      column: amount
+  
+  missing_rate_transaction_date:
+    type: missing_rate
+    specific:
+      dataset: daily_transactions
+      column: transaction_date
+  
+  missing_rate_currency:
+    type: missing_rate
+    specific:
+      dataset: daily_transactions
+      column: currency
+
+tests:
+  no_missing_transaction_id:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_transaction_id
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "ID de transaction obligatoire - 0% de valeurs manquantes"
+  
+  no_missing_account_number:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_account_number
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "Numéro de compte obligatoire - 0% de valeurs manquantes"
+  
+  acceptable_missing_amount:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_amount
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0.01
+    description: "Montant obligatoire - maximum 1% de valeurs manquantes accepté"
+  
+  no_missing_transaction_date:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_transaction_date
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0
+    description: "Date de transaction obligatoire - 0% de valeurs manquantes"
+  
+  acceptable_missing_currency:
+    type: interval_check
+    specific:
+      metric_id: missing_rate_currency
+      target_mode: metric_value
+      lower_enabled: true
+      lower_value: 0
+      upper_enabled: true
+      upper_value: 0.05
+    description: "Devise obligatoire - maximum 5% de valeurs manquantes accepté"

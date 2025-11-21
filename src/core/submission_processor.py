@@ -133,6 +133,20 @@ class SubmissionProcessor:
         """Charge les datasets depuis les fichiers fournis via les connecteurs appropriés"""
         datasets = {}
         
+        # Charger la config DQ pour obtenir les alias attendus
+        dataset_aliases = {}
+        if channel.dq_configs:
+            try:
+                config = load_dq_config(channel.dq_configs[0])
+                # Mapper file_id -> dataset alias depuis la config DQ
+                # On assume que le premier database dans la config correspond au premier file_spec
+                if config.databases:
+                    for i, file_spec in enumerate(channel.file_specifications):
+                        if i < len(config.databases):
+                            dataset_aliases[file_spec.file_id] = config.databases[i].alias
+            except Exception as e:
+                print(f"  ⚠️ Impossible de charger les alias depuis le DQ: {e}")
+        
         for file_mapping in submission.file_mappings:
             # Trouver la spécification
             spec = next((fs for fs in channel.file_specifications 
@@ -170,10 +184,12 @@ class SubmissionProcessor:
                     if missing_cols:
                         raise ValueError(f"Colonnes manquantes: {missing_cols}")
                 
-                datasets[spec.file_id] = df
+                # Utiliser l'alias du dataset si disponible, sinon le file_id
+                dataset_key = dataset_aliases.get(spec.file_id, spec.file_id)
+                datasets[dataset_key] = df
                 file_mapping.validated = True
                 
-                print(f"  ✅ {spec.name}: {len(df)} lignes chargées via {source_type.value}")
+                print(f"  ✅ {spec.name}: {len(df)} lignes chargées via {source_type.value} (alias: {dataset_key})")
                 
             except Exception as e:
                 file_mapping.validation_errors.append(str(e))

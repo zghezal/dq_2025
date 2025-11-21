@@ -1,4 +1,14 @@
 streams:
+  - id: "BANKING"
+    label: "Banking Operations"
+    projects:
+      - id: "CORE_BANKING"
+        zones:
+          - id: "raw"
+            datasets:
+              - alias: daily_transactions
+                name: "daily_transactions.csv"
+                source: { kind: local, path: "sourcing/input/daily_transactions.csv" }
   - id: "A"
     label: "Stream A"
     projects:
