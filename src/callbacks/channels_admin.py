@@ -8,16 +8,170 @@ from dash import Input, Output, State, callback, html, dcc, no_update, ALL
 from dash.exceptions import PreventUpdate
 import json
 from datetime import datetime
+from pathlib import Path
+import yaml
 
 from src.core.models_channels import (
     DropChannel, FileSpecification, EmailConfig, FileFormat
 )
 from src.core.channel_manager import get_channel_manager
+from src.config import _load_inventory
 
 
 # Variables globales pour l'état de l'interface
 current_channel_id = None
 file_specs_list = []
+
+
+# ========== CALLBACKS POUR INVENTORY CONTEXT ==========
+
+@callback(
+    Output('channel-stream-dropdown', 'options'),
+    Input('channel-modal', 'is_open'),
+    prevent_initial_call=False
+)
+def populate_streams(is_open):
+    """Peuple le dropdown des streams depuis l'inventory."""
+    inv = _load_inventory()
+    streams = inv.get("streams", [])
+    options = [{"label": stream.get("label", stream["id"]), "value": stream["id"]} 
+               for stream in streams]
+    return options
+
+
+@callback(
+    Output('channel-project-dropdown', 'options'),
+    Input('channel-stream-dropdown', 'value'),
+    Input('channel-modal', 'is_open'),
+    prevent_initial_call=False
+)
+def populate_projects(stream_id, is_open):
+    """Peuple le dropdown des projets en fonction du stream sélectionné."""
+    inv = _load_inventory()
+    streams = inv.get("streams", [])
+    projects = []
+    
+    if stream_id:
+        # Filtrer par stream
+        for stream in streams:
+            if stream["id"] == stream_id:
+                projects = stream.get("projects", [])
+                break
+    else:
+        # Tous les projets de tous les streams
+        for stream in streams:
+            projects.extend(stream.get("projects", []))
+    
+    # Dédupliquer par ID
+    unique_projects = {}
+    for proj in projects:
+        if proj["id"] not in unique_projects:
+            unique_projects[proj["id"]] = proj
+    
+    options = [{"label": f"{proj['id']}", "value": proj["id"]} 
+               for proj in unique_projects.values()]
+    return options
+
+
+@callback(
+    Output('channel-zone-dropdown', 'options'),
+    Input('channel-stream-dropdown', 'value'),
+    Input('channel-project-dropdown', 'value'),
+    Input('channel-modal', 'is_open'),
+    prevent_initial_call=False
+)
+def populate_zones(stream_id, project_id, is_open):
+    """Peuple le dropdown des zones en fonction du stream et projet sélectionnés."""
+    inv = _load_inventory()
+    streams = inv.get("streams", [])
+    zones = []
+    
+    if not project_id:
+        # Si pas de projet, retourner toutes les zones
+        for stream in streams:
+            for project in stream.get("projects", []):
+                zones.extend(project.get("zones", []))
+    else:
+        # Parcourir l'inventory pour trouver les zones
+        for stream in streams:
+            if stream_id and stream["id"] != stream_id:
+                continue
+            
+            for project in stream.get("projects", []):
+                if project["id"] == project_id:
+                    zones.extend(project.get("zones", []))
+    
+    # Dédupliquer par ID
+    unique_zones = {}
+    for zone in zones:
+        if zone["id"] not in unique_zones:
+            unique_zones[zone["id"]] = zone
+    
+    options = [{"label": zone["id"], "value": zone["id"]} 
+               for zone in unique_zones.values()]
+    return options
+
+
+@callback(
+    Output('channel-dq-configs-dropdown', 'options'),
+    Input('channel-stream-dropdown', 'value'),
+    Input('channel-project-dropdown', 'value'),
+    Input('channel-zone-dropdown', 'value')
+)
+def load_available_dq_configs(stream_id, project_id, zone_id):
+    """Charge les DQ disponibles en fonction du contexte stream/project/zone."""
+    print(f"[DEBUG load_available_dq_configs] Contexte: stream={stream_id}, project={project_id}, zone={zone_id}")
+    
+    dq_dir = Path("dq/definitions")
+    if not dq_dir.exists():
+        print(f"[DEBUG] Répertoire DQ n'existe pas: {dq_dir}")
+        return []
+    
+    options = []
+    
+    for dq_file in dq_dir.glob("*.yaml"):
+        try:
+            with open(dq_file, 'r', encoding='utf-8') as f:
+                dq_config = yaml.safe_load(f)
+            
+            # Vérifier le contexte
+            context = dq_config.get('context', {})
+            dq_stream = context.get('stream')
+            dq_project = context.get('project')
+            dq_zone = context.get('zone')
+            
+            print(f"[DEBUG] Fichier {dq_file.name}: stream={dq_stream}, project={dq_project}, zone={dq_zone}")
+            
+            # Filtrer selon le contexte sélectionné
+            match = True
+            if stream_id and dq_stream and dq_stream != stream_id:
+                match = False
+                print(f"  ❌ Stream mismatch: {dq_stream} != {stream_id}")
+            if project_id and dq_project and dq_project != project_id:
+                match = False
+                print(f"  ❌ Project mismatch: {dq_project} != {project_id}")
+            if zone_id and dq_zone and dq_zone != zone_id:
+                match = False
+                print(f"  ❌ Zone mismatch: {dq_zone} != {zone_id}")
+            
+            if match:
+                dq_id = dq_config.get('id', dq_file.stem)
+                dq_desc = dq_config.get('description', '')
+                label = f"{dq_id}"
+                if dq_desc:
+                    label += f" - {dq_desc[:50]}"
+                
+                print(f"  ✅ Match! Ajout de {label}")
+                options.append({
+                    "label": label,
+                    "value": str(dq_file)  # Déjà un chemin relatif
+                })
+        except Exception as e:
+            print(f"[DEBUG] Erreur lors de la lecture de {dq_file.name}: {e}")
+            # Ignorer les fichiers invalides et continuer avec le suivant
+    
+    print(f"[DEBUG] Total DQ trouvés: {len(options)}")
+    return options
 
 
 @callback(
@@ -96,6 +250,15 @@ def _render_channel_card(channel: DropChannel, stats: dict):
                     channel.team_name
                 ], className="mb-2"),
                 
+                # Contexte inventory
+                html.Div([
+                    html.Small([
+                        html.I(className="bi bi-folder2-open me-1"),
+                        html.Strong("Contexte: "),
+                        f"{channel.stream or '(all)'} / {channel.project} / {channel.zone}"
+                    ], className="text-info")
+                ], className="mb-2") if channel.project and channel.zone else None,
+                
                 html.P(channel.description or "Aucune description", 
                        className="text-muted small mb-3"),
                 
@@ -165,6 +328,9 @@ def _render_channel_card(channel: DropChannel, stats: dict):
     Output('channel-name-input', 'value'),
     Output('channel-team-input', 'value'),
     Output('channel-direction-dropdown', 'value'),
+    Output('channel-stream-dropdown', 'value'),
+    Output('channel-project-dropdown', 'value'),
+    Output('channel-zone-dropdown', 'value'),
     Output('channel-description-input', 'value'),
     Output('channel-active-check', 'value'),
     Output('file-specs-container', 'children'),
@@ -196,7 +362,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
     
     # Fermer le modal (annuler ou sauvegarder)
     if 'btn-cancel-channel' in trigger_id or 'btn-save-channel' in trigger_id:
-        return (False,) + tuple([no_update] * 19)
+        return (False,) + tuple([no_update] * 22)
     
     # Nouveau canal
     if 'btn-new-channel' in trigger_id:
@@ -208,8 +374,11 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
             "",  # name
             "",  # team
             "incoming",  # direction (default)
+            None,  # stream (optionnel)
+            "",  # project
+            "",  # zone
             "",  # description
-            [True],  # active (checked)
+            ["active"],  # active (checked)
             [],  # file specs (vide)
             [],  # dq configs
             ["public"],  # is_public (checked by default)
@@ -232,7 +401,7 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
         channel = manager.get_channel(channel_id)
         
         if not channel:
-            return [no_update] * 20
+            return [no_update] * 23
         
         # Rendre les file specs
         file_specs_elements = []
@@ -247,8 +416,11 @@ def manage_channel_modal(new_clicks, edit_clicks, save_clicks, cancel_clicks, cu
             channel.name,
             channel.team_name,
             channel.direction,
+            channel.stream,  # stream
+            channel.project,  # project
+            channel.zone,  # zone
             channel.description or "",
-            [True] if channel.active else [],
+            ["active"] if channel.active else [],
             file_specs_elements,
             channel.dq_configs,
             ["public"] if channel.is_public else [],
@@ -377,11 +549,15 @@ def remove_file_spec_row(n_clicks_list, current_children):
 @callback(
     Output('toast-container', 'children'),
     Output('channels-list-container', 'children', allow_duplicate=True),
+    Output('channel-modal', 'is_open', allow_duplicate=True),
     Input('btn-save-channel', 'n_clicks'),
     State('channel-id-input', 'value'),
     State('channel-name-input', 'value'),
     State('channel-team-input', 'value'),
     State('channel-direction-dropdown', 'value'),
+    State('channel-stream-dropdown', 'value'),
+    State('channel-project-dropdown', 'value'),
+    State('channel-zone-dropdown', 'value'),
     State('channel-description-input', 'value'),
     State('channel-active-check', 'value'),
     State({'type': 'file-spec-id', 'index': dash.dependencies.ALL}, 'value'),
@@ -400,7 +576,7 @@ def remove_file_spec_row(n_clicks_list, current_children):
     State('channel-failure-body-input', 'value'),
     prevent_initial_call=True
 )
-def save_channel(n_clicks, channel_id, name, team, direction, description, active_check,
+def save_channel(n_clicks, channel_id, name, team, direction, stream_id, project_id, zone_id, description, active_check,
                  file_ids, file_names, file_formats, file_required_list,
                  dq_configs, public_check, allowed_users_str, allowed_groups_str,
                  team_emails, admin_emails,
@@ -409,12 +585,27 @@ def save_channel(n_clicks, channel_id, name, team, direction, description, activ
     if not n_clicks:
         raise PreventUpdate
     
+    print(f"[DEBUG save_channel] Sauvegarde du canal {channel_id}")
+    print(f"  - stream: {stream_id}, project: {project_id}, zone: {zone_id}")
+    print(f"  - active_check: {active_check}")
+    print(f"  - dq_configs: {dq_configs}")
+    
     # Validation
-    if not channel_id or not name or not team:
+    if not channel_id or not name or not team or not project_id or not zone_id:
         toast = html.Div([
             html.Div([
                 html.Strong("Erreur"),
-                " Veuillez remplir tous les champs obligatoires."
+                " Veuillez remplir tous les champs obligatoires (ID, nom, équipe, projet, zone)."
+            ], className="toast-body")
+        ], className="toast show bg-danger text-white")
+        return toast, no_update, no_update
+    
+    # Validation du contexte (project et zone mandatory)
+    if not project_id or not zone_id:
+        toast = html.Div([
+            html.Div([
+                html.Strong("Erreur"),
+                " Le projet et la zone sont obligatoires."
             ], className="toast-body")
         ], className="toast show bg-danger text-white")
         return toast, no_update
@@ -456,8 +647,11 @@ def save_channel(n_clicks, channel_id, name, team, direction, description, activ
         name=name,
         team_name=team,
         direction=direction or "incoming",
+        stream=stream_id,
+        project=project_id or "",
+        zone=zone_id or "",
         description=description,
-        active=bool(active_check),
+        active='active' in (active_check or []),
         file_specifications=file_specs,
         dq_configs=dq_configs or [],
         email_config=email_config,
@@ -494,7 +688,7 @@ def save_channel(n_clicks, channel_id, name, team, direction, description, activ
         stats = manager.get_channel_statistics(ch.channel_id)
         cards.append(_render_channel_card(ch, stats))
     
-    return toast, html.Div(cards, className="row")
+    return toast, html.Div(cards, className="row"), False  # False pour fermer la modale
 
 
 @callback(

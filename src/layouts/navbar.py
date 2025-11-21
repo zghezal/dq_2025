@@ -114,126 +114,126 @@ def navbar():
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle([
                 html.I(className="bi bi-question-circle me-2"),
-                "Aide - Portal STDA"
+                "Help - STDA Portal"
             ])),
             dbc.ModalBody([
                 dbc.Accordion([
                     dbc.AccordionItem([
-                        html.P("Le Portal STDA est un système de gestion et d'exécution de contrôles qualité (DQ) sur vos données."),
-                        html.P("Il vous permet de:"),
+                        html.P("The STDA Portal is a data quality (DQ) management and execution system for your datasets."),
+                        html.P("It allows you to:"),
                         html.Ul([
-                            html.Li("Créer des configurations DQ avec le Builder"),
-                            html.Li("Exécuter des contrôles sur vos datasets"),
-                            html.Li("Gérer les canaux de dépôt de données"),
-                            html.Li("Visualiser les résultats dans des tableaux de bord")
+                            html.Li("Create DQ configurations with the Builder"),
+                            html.Li("Execute quality checks on your datasets"),
+                            html.Li("Manage data deposit channels"),
+                            html.Li("Visualize results in dashboards")
                         ])
-                    ], title="📖 Qu'est-ce que le Portal STDA?"),
+                    ], title="📖 What is STDA Portal?"),
                     
                     dbc.AccordionItem([
-                        html.P("L'inventaire est le catalogue central de tous vos datasets."),
+                        html.P("The inventory is the central catalog of all your datasets."),
                         html.P("Structure:"),
                         html.Ul([
                             html.Li(html.Strong("Stream:")),
-                            html.Span(" Niveau organisationnel le plus haut (ex: A, B, C)", className="ms-2"),
+                            html.Span(" Highest organizational level (e.g., A, B, C)", className="ms-2"),
                             html.Li(html.Strong("Project:")),
-                            html.Span(" Projet ou domaine métier (ex: P1, P2)", className="ms-2"),
+                            html.Span(" Business project or domain (e.g., P1, P2)", className="ms-2"),
                             html.Li(html.Strong("Zone:")),
-                            html.Span(" Zone de traitement (raw, cleaned, aggregated)", className="ms-2"),
+                            html.Span(" Processing zone (raw, cleaned, aggregated)", className="ms-2"),
                             html.Li(html.Strong("Dataset:")),
-                            html.Span(" Fichier de données avec un alias unique", className="ms-2")
+                            html.Span(" Data file with a unique alias", className="ms-2")
                         ]),
-                        html.P("L'inventaire se trouve dans ", className="mt-3"),
+                        html.P("The inventory is located at ", className="mt-3"),
                         html.Code("config/inventory.yaml", className="text-primary")
-                    ], title="📦 Inventaire des Données"),
+                    ], title="📦 Data Inventory"),
                     
                     dbc.AccordionItem([
-                        html.P("Le DQ Builder est l'outil de création de configurations de contrôle qualité."),
-                        html.H6("Étapes:"),
+                        html.P("The DQ Builder is the tool for creating quality control configurations."),
+                        html.H6("Steps:"),
                         html.Ol([
-                            html.Li([html.Strong("Datasets:"), " Sélectionnez les données à contrôler"]),
-                            html.Li([html.Strong("Métriques:"), " Définissez les calculs (taux de nulls, moyennes, etc.)"]),
-                            html.Li([html.Strong("Tests:"), " Créez les validations (seuils, comparaisons, etc.)"]),
-                            html.Li([html.Strong("Scripts:"), " Ajoutez des contrôles personnalisés (optionnel)"]),
-                            html.Li([html.Strong("Publication:"), " Sauvegardez et exécutez votre DQ"])
+                            html.Li([html.Strong("Datasets:"), " Select the data to check"]),
+                            html.Li([html.Strong("Metrics:"), " Define calculations (null rates, averages, etc.)"]),
+                            html.Li([html.Strong("Tests:"), " Create validations (thresholds, comparisons, etc.)"]),
+                            html.Li([html.Strong("Scripts:"), " Add custom checks (optional)"]),
+                            html.Li([html.Strong("Publication:"), " Save and execute your DQ"])
                         ]),
-                        html.P("Accès: Menu principal → DQ Editor → Builder", className="mt-3 text-muted")
+                        html.P("Access: Main menu → DQ Editor → Builder", className="mt-3 text-muted")
                     ], title="🔨 DQ Builder"),
                     
                     dbc.AccordionItem([
-                        html.P("Les canaux de dépôt permettent aux utilisateurs de soumettre des fichiers pour validation."),
-                        html.H6("Fonctionnement:"),
+                        html.P("Drop channels allow users to submit files for validation."),
+                        html.H6("How it works:"),
                         html.Ol([
-                            html.Li("Un canal est créé avec une configuration DQ associée"),
-                            html.Li("Les utilisateurs déposent leurs fichiers via l'interface"),
-                            html.Li("Le système exécute automatiquement les contrôles DQ"),
-                            html.Li("Un rapport complet est généré (Excel + investigations)")
+                            html.Li("A channel is created with an associated DQ configuration"),
+                            html.Li("Users deposit their files through the interface"),
+                            html.Li("The system automatically runs DQ checks"),
+                            html.Li("A comprehensive report is generated (Excel + investigations)")
                         ]),
-                        html.P("Cas d'usage:", className="mt-3"),
+                        html.P("Use cases:", className="mt-3"),
                         html.Ul([
-                            html.Li("Validation des fichiers mensuels"),
-                            html.Li("Contrôle qualité avant intégration"),
-                            html.Li("Audit automatique des données externes")
+                            html.Li("Monthly file validation"),
+                            html.Li("Quality control before integration"),
+                            html.Li("Automated audit of external data")
                         ]),
-                        html.H6("Types de canaux:", className="mt-3"),
+                        html.H6("Channel types:", className="mt-3"),
                         html.Ul([
                             html.Li([
-                                html.Strong("Entrant (vers STDA) ⬇:"),
-                                " Les équipes externes déposent leurs données dans STDA. Exemple: Finance soumet les ventes mensuelles."
+                                html.Strong("Inbound (to STDA) ⬇:"),
+                                " External teams deposit their data into STDA. Example: Finance submits monthly sales."
                             ]),
                             html.Li([
-                                html.Strong("Sortant (depuis STDA) ⬆:"),
-                                " STDA envoie des données aux équipes. Exemple: Export automatique vers le BI."
+                                html.Strong("Outbound (from STDA) ⬆:"),
+                                " STDA sends data to teams. Example: Automatic export to BI."
                             ])
                         ]),
-                        html.P("Accès: Menu principal → Check & Drop", className="mt-3 text-muted")
-                    ], title="📥 Canaux de Dépôt"),
+                        html.P("Access: Main menu → Check & Drop", className="mt-3 text-muted")
+                    ], title="📥 Drop Channels"),
                     
                     dbc.AccordionItem([
-                        html.P("Le DQ Runner permet d'exécuter manuellement des configurations DQ existantes."),
-                        html.H6("Différence avec le Builder:"),
+                        html.P("The DQ Runner allows manual execution of existing DQ configurations."),
+                        html.H6("Difference with Builder:"),
                         html.Ul([
-                            html.Li([html.Strong("Builder:"), " Créer et configurer des DQ"]),
-                            html.Li([html.Strong("Runner:"), " Exécuter des DQ déjà configurées"])
+                            html.Li([html.Strong("Builder:"), " Create and configure DQs"]),
+                            html.Li([html.Strong("Runner:"), " Execute already configured DQs"])
                         ]),
-                        html.H6("Options d'exécution:", className="mt-3"),
+                        html.H6("Execution options:", className="mt-3"),
                         html.Ul([
-                            html.Li([html.Strong("Investigation:"), " Génère des échantillons de données problématiques"]),
-                            html.Li([html.Strong("Verbose:"), " Affiche plus de détails dans les logs"])
+                            html.Li([html.Strong("Investigation:"), " Generates samples of problematic data"]),
+                            html.Li([html.Strong("Verbose:"), " Displays more details in logs"])
                         ]),
                         html.H6("Export:", className="mt-3"),
-                        html.P("Les résultats sont exportés dans un fichier ZIP contenant:"),
+                        html.P("Results are exported in a ZIP file containing:"),
                         html.Ul([
-                            html.Li("Fichier Excel avec métriques et tests"),
-                            html.Li("Rapport d'investigation (texte)"),
-                            html.Li("Échantillons de données problématiques (CSV)")
+                            html.Li("Excel file with metrics and tests"),
+                            html.Li("Investigation report (text)"),
+                            html.Li("Problematic data samples (CSV)")
                         ]),
-                        html.P("Accès: Menu principal → DQ Editor → Runner", className="mt-3 text-muted")
+                        html.P("Access: Main menu → DQ Editor → Runner", className="mt-3 text-muted")
                     ], title="▶️ DQ Runner"),
                     
                     dbc.AccordionItem([
-                        html.H6("Métriques"),
-                        html.P("Les métriques calculent des valeurs sur vos données:"),
+                        html.H6("Metrics"),
+                        html.P("Metrics calculate values on your data:"),
                         html.Ul([
-                            html.Li("Taux de valeurs manquantes"),
-                            html.Li("Moyennes, sommes, comptages"),
-                            html.Li("Agrégations personnalisées")
+                            html.Li("Missing value rates"),
+                            html.Li("Averages, sums, counts"),
+                            html.Li("Custom aggregations")
                         ]),
                         html.H6("Tests", className="mt-3"),
-                        html.P("Les tests valident que les métriques respectent des critères:"),
+                        html.P("Tests validate that metrics meet criteria:"),
                         html.Ul([
-                            html.Li("Seuils min/max"),
-                            html.Li("Comparaisons entre datasets"),
-                            html.Li("Détection d'outliers")
+                            html.Li("Min/max thresholds"),
+                            html.Li("Cross-dataset comparisons"),
+                            html.Li("Outlier detection")
                         ]),
                         html.H6("Scripts", className="mt-3"),
-                        html.P("Les scripts permettent des contrôles 100% personnalisés en Python."),
-                        html.P("Documentation complète: ", className="mt-3"),
+                        html.P("Scripts allow 100% custom Python checks."),
+                        html.P("Full documentation: ", className="mt-3"),
                         html.Code("docs/SCRIPTS_DQ_GUIDE.md", className="text-primary")
-                    ], title="🔧 Métriques, Tests et Scripts")
+                    ], title="🔧 Metrics, Tests and Scripts")
                 ], start_collapsed=True)
             ]),
             dbc.ModalFooter(
-                dbc.Button("Fermer", id="help-modal-close", color="secondary")
+                dbc.Button("Close", id="help-modal-close", color="secondary")
             )
         ], id="help-modal", size="xl", is_open=False, scrollable=True)
     ])

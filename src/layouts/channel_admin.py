@@ -125,6 +125,41 @@ def channel_admin_page():
                         ], md=6)
                     ]),
                     
+                    # Contexte Inventory (stream/project/zone)
+                    html.H6("Contexte Inventory", className="mt-3 mb-2"),
+                    html.P("Définissez le contexte inventory pour charger les DQ appropriés.", 
+                          className="text-muted small"),
+                    
+                    dbc.Row([
+                        dbc.Col([
+                            dbc.Label("Stream (optionnel)"),
+                            dcc.Dropdown(
+                                id="channel-stream-dropdown",
+                                placeholder="Sélectionnez un stream...",
+                                clearable=True,
+                                className="mb-3"
+                            )
+                        ], md=4),
+                        dbc.Col([
+                            dbc.Label("Project *"),
+                            dcc.Dropdown(
+                                id="channel-project-dropdown",
+                                placeholder="Sélectionnez un projet...",
+                                clearable=False,
+                                className="mb-3"
+                            )
+                        ], md=4),
+                        dbc.Col([
+                            dbc.Label("Zone *"),
+                            dcc.Dropdown(
+                                id="channel-zone-dropdown",
+                                placeholder="Sélectionnez une zone...",
+                                clearable=False,
+                                className="mb-3"
+                            )
+                        ], md=4)
+                    ]),
+                    
                     dbc.Row([
                         dbc.Col([
                             dbc.Label("Statut"),

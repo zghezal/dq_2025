@@ -161,6 +161,11 @@ class DropChannel:
     team_name: str = ""  # Nom de l'équipe externe
     direction: str = "incoming"  # "incoming" (vers STDA) ou "outgoing" (depuis STDA)
     
+    # Contexte inventory (pour charger les DQ)
+    stream: Optional[str] = None  # Stream optionnel
+    project: str = ""  # Projet mandatory
+    zone: str = ""  # Zone mandatory
+    
     # Fichiers attendus
     file_specifications: List[FileSpecification] = field(default_factory=list)
     
@@ -188,6 +193,9 @@ class DropChannel:
             "description": self.description,
             "team_name": self.team_name,
             "direction": self.direction,
+            "stream": self.stream,
+            "project": self.project,
+            "zone": self.zone,
             "file_specifications": [fs.to_dict() for fs in self.file_specifications],
             "dq_configs": self.dq_configs,
             "email_config": self.email_config.to_dict(),
@@ -241,6 +249,13 @@ class DropChannel:
             data_copy['created_at'] = datetime.fromisoformat(data_copy['created_at'])
         if 'updated_at' in data_copy and isinstance(data_copy['updated_at'], str):
             data_copy['updated_at'] = datetime.fromisoformat(data_copy['updated_at'])
+        # Valeurs par défaut pour les nouveaux champs
+        if 'stream' not in data_copy:
+            data_copy['stream'] = None
+        if 'project' not in data_copy:
+            data_copy['project'] = ""
+        if 'zone' not in data_copy:
+            data_copy['zone'] = ""
         return cls(**data_copy)
 
 

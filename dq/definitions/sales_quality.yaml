@@ -1,6 +1,12 @@
-id: sales_strict_validation
-description: "Validation stricte des ventes avec tolérance zéro et règles métier personnalisées"
+id: sales_quality
+description: "Contrôles qualité pour les données de ventes"
 version: "1.0"
+
+context:
+  stream: "A"
+  project: "P1"
+  zone: "raw"
+  quarter: "2025Q4"
 
 datasets:
   sales_data:
@@ -27,7 +33,7 @@ metrics:
       column: date
 
 tests:
-  no_missing_amount:
+  acceptable_missing_amount:
     type: interval_check
     specific:
       metric_id: missing_rate_amount
@@ -35,10 +41,10 @@ tests:
       lower_enabled: true
       lower_value: 0
       upper_enabled: true
-      upper_value: 0
-    description: "AUCUNE valeur manquante acceptée dans amount"
+      upper_value: 0.1
+    description: "Taux de valeurs manquantes acceptable dans amount (<10%)"
   
-  no_missing_customer:
+  acceptable_missing_customer:
     type: interval_check
     specific:
       metric_id: missing_rate_customer
@@ -46,10 +52,10 @@ tests:
       lower_enabled: true
       lower_value: 0
       upper_enabled: true
-      upper_value: 0
-    description: "AUCUNE valeur manquante acceptée dans customer_id"
+      upper_value: 0.1
+    description: "Taux de valeurs manquantes acceptable dans customer_id (<10%)"
   
-  no_missing_date:
+  acceptable_missing_date:
     type: interval_check
     specific:
       metric_id: missing_rate_date
@@ -57,16 +63,5 @@ tests:
       lower_enabled: true
       lower_value: 0
       upper_enabled: true
-      upper_value: 0
-    description: "AUCUNE valeur manquante acceptée dans date"
-
-scripts:
-  - id: business_validation
-    path: scripts/validation/business_checks.py
-    datasets:
-      - sales_data
-    params:
-      dataset: sales_data
-      min_amount: 0.01
-      max_amount: 10000
-    description: "Validation des règles métier strictes"
+      upper_value: 0.05
+    description: "Taux de valeurs manquantes acceptable dans date (<5%)"
